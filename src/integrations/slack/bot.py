@@ -21,8 +21,10 @@ def _format_citations(citations):
     for item in citations[:3]:
         label = item.get("label") or item.get("citation") or "[?]"
         content = item.get("content", "").strip().replace("\n", " ")
-        snippet = content[:140] + ("..." if len(content) > 140 else "")
-        lines.append(f"- {label}: {snippet}")
+        snippet = content[:140].strip()
+        lines.append(f"- {label}")
+        if snippet:
+            lines.append(f"  {snippet}{'...' if len(content) > 140 else ''}")
     return "\n".join(lines)
 
 
@@ -114,7 +116,7 @@ def create_slack_app(
 
             if citations:
                 source_text = "\n".join(
-                    f"- {item.get('label', item.get('citation', '[?]'))}: {item.get('content', '')[:100]}..."
+                    f"- {item.get('label', item.get('citation', '[?]'))}\n  {item.get('content', '')[:100].strip()}{'...' if len(item.get('content', '')) > 100 else ''}"
                     for item in citations[:3]
                 )
                 blocks.append({"type": "divider"})

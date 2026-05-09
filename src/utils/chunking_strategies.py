@@ -82,6 +82,10 @@ def chunk_text(text: str, model=None) -> List[DocumentChunk]:
     unique_chunks = _deduplicate_chunks(chunks)
     unique_chunks.sort(key=lambda x: x.metadata.get("start_idx", 0))
 
+    for chunk in unique_chunks:
+        if isinstance(chunk.metadata, dict):
+            chunk.metadata.update(_extract_position_metadata(chunk.text))
+
     # Apply dynamic chunk resizing
     resized_chunks = _dynamic_resize(unique_chunks, model=model)
 
@@ -321,3 +325,26 @@ def _find_overlap(a: str, b: str, min_overlap: int = 5) -> int:
         if a[-i:] == b[:i]:
             best_overlap = i
     return best_overlap
+
+
+def _extract_position_metadata(text: str) -> dict:
+    """Extract page and line markers embedded by the extractor."""
+    markers = re.findall(r"\[Page (\d+) \| Line (\d+)\]", text)
+    if not markers:
+        line_markers = re.findall(r"\[Line (\d+)\]", text)
+        if not line_markers:
+            return {}
+        lines = [int(num) for num in line_markers]
+        return {
+            "start_line": min(lines),
+            "end_line": max(lines),
+        }
+
+    pages = [int(page) for page, _ in markers]
+    lines = [int(line) for _, line in markers]
+    return {
+        "start_page": min(pages),
+        "end_page": max(pages),
+        "start_line": min(lines),
+        "end_line": max(lines),
+    }

@@ -22,6 +22,7 @@ from src.core.models import Query
 from src.llm.gemini_client import GeminiClient
 from src.llm.openai_client import OpenAIClient
 from src.integrations.slack.bot import start_slack_bot
+from src.integrations.telegram.bot import start_telegram_bot
 
 logger = setup_logging()
 logger.info("=== COGITX-RAG SYSTEM STARTING ===\n")
@@ -71,7 +72,11 @@ query_processor = None
 # Cache
 document_cache = DocumentCache(cache_dir=CACHE_DIR, logger=logger)
 rag_state_manager = RAGStateManager(STATE_DIR, logger)
-conversation_memory = ConversationMemoryManager(CACHE_DIR, logger, window_size=6)
+conversation_memory = ConversationMemoryManager(
+    CACHE_DIR,
+    logger,
+    window_size=settings.memory.conversation_window_size,
+)
 
 # LLM config
 system_prompt = load_prompt("prompts/system_prompt.txt")
@@ -216,6 +221,21 @@ async def startup_slack_bot():
                 ingest_and_query_for_slack,
                 ingest_files_and_query_for_slack,
                 enabled=slack_enabled,
+            )
+        )
+
+
+@app.on_event("startup")
+async def startup_telegram_bot():
+    telegram_enabled = settings.telegram.telegram_enabled
+    logger.info(f"Telegram enabled resolved to {telegram_enabled}")
+    if telegram_enabled:
+        logger.info("Telegram enabled; starting Telegram bot in background")
+        asyncio.create_task(
+            start_telegram_bot(
+                query_rag_for_slack,
+                ingest_files_and_query_for_slack,
+                enabled=telegram_enabled,
             )
         )
 

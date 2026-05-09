@@ -43,9 +43,23 @@ class ProcessQuery:
         """Build a human-readable source label from chunk metadata."""
         metadata = getattr(chunk, "metadata", {}) or {}
         filename = metadata.get("filename") or metadata.get("source") or metadata.get("title") or "Document"
-        page = metadata.get("page") or metadata.get("page_number")
-        if page is not None:
-            return f"[{index}] {filename} (page {page})"
+        start_page = metadata.get("start_page") or metadata.get("page") or metadata.get("page_number")
+        end_page = metadata.get("end_page")
+        start_line = metadata.get("start_line")
+        end_line = metadata.get("end_line")
+        location = []
+        if start_page is not None:
+            if end_page is not None and start_page != end_page:
+                location.append(f"pages {start_page}-{end_page}")
+            else:
+                location.append(f"page {start_page}")
+        if start_line is not None:
+            if end_line is not None and start_line != end_line:
+                location.append(f"lines {start_line}-{end_line}")
+            else:
+                location.append(f"line {start_line}")
+        if location:
+            return f"[{index}] {filename} ({', '.join(location)})"
         return f"[{index}] {filename}"
 
     def _build_citations(self, chunks):

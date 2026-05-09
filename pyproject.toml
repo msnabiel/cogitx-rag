@@ -50,6 +50,7 @@ aiofiles = "^23.2.1"
 # Slack Integration
 slack-bolt = "^1.18.0"
 slack-sdk = "^3.26.0"
+python-telegram-bot = "^21.4"
 
 # Logging & Monitoring
 loguru = "^0.7.2"
