@@ -2,6 +2,7 @@
 
 import logging
 import re
+import json
 from types import SimpleNamespace
 from src.utils.prompt_loader import load_prompt
 
@@ -24,6 +25,19 @@ class ProcessQuery:
         cleaned = answer.strip()
         cleaned = re.sub(r"^\s*Answer:\s*", "", cleaned, flags=re.IGNORECASE)
         return cleaned.strip()
+
+    def _parse_json_response(self, response: str):
+        """Parse the model response as strict JSON, with a small fallback for fenced output."""
+        cleaned = response.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        payload = json.loads(cleaned)
+        answer = self._clean_answer(str(payload.get("answer", "")))
+        confidence = float(payload.get("confidence", 0.0))
+        citations = payload.get("citations", [])
+        return answer, confidence, citations
 
     async def process(self, query: str, session_id: str = None):
         """Process query using ensemble search and LLM"""
@@ -70,8 +84,8 @@ class ProcessQuery:
                 logger.warning("LLM response missing text")
                 return "No response generated"
 
-            answer = self._clean_answer(response)
-            citations = [
+            answer, confidence, citations = self._parse_json_response(response)
+            fallback_citations = [
                 {
                     "citation": f"[{i+1}]",
                     "content": chunk.text,
@@ -80,8 +94,20 @@ class ProcessQuery:
                 }
                 for i, chunk in enumerate(deduplicated_chunks)
             ]
-            confidence = 0.0
-            if search_results:
+            if not citations:
+                citations = fallback_citations
+            elif isinstance(citations, list):
+                normalized = []
+                for i, item in enumerate(citations, 1):
+                    if isinstance(item, dict):
+                        normalized.append({
+                            "citation": item.get("citation", f"[{i}]"),
+                            "content": item.get("content", ""),
+                            "chunk_id": item.get("chunk_id", ""),
+                            "metadata": item.get("metadata", {}),
+                        })
+                citations = normalized or fallback_citations
+            if confidence <= 0.0 and search_results:
                 top_score = max(result.combined_score for result in search_results)
                 confidence = min(1.0, round(top_score * 5, 3))
             if self.memory_manager and session_id:
