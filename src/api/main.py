@@ -72,11 +72,12 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
+    reload_enabled = settings.environment != "production"
 
     uvicorn.run(
         "api.main:app",
         host=settings.api.api_host,
         port=settings.api.api_port,
-        reload=settings.api.api_reload,
-        workers=settings.api.api_workers if not settings.api.api_reload else 1,
+        reload=reload_enabled,
+        workers=1 if reload_enabled else settings.api.api_workers,
     )

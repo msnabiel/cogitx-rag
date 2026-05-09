@@ -3,6 +3,7 @@
 import os
 import logging
 import asyncio
+import hashlib
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -87,46 +88,45 @@ class DocumentProcessor:
         """
         def process_single_input(input_source: str):
             try:
-                # Check cache first
-                cached_data = self.document_cache.get(input_source)
+                if not (input_source.startswith("file://") or os.path.exists(input_source)):
+                    logger.error(f"Invalid input: {input_source}")
+                    return []
+
+                local_path = input_source.replace("file:/", "")
+                logger.info(f"📄 Processing local file: {local_path}")
+
+                with open(local_path, "rb") as f:
+                    file_bytes = f.read()
+
+                content_hash = hashlib.sha256(file_bytes).hexdigest()
+                cached_data = self.document_cache.get(content_hash)
+
                 if cached_data:
-                    logger.info(f"🔄 Using cached data for {input_source}")
+                    logger.info(f"🔄 Reusing cached extracted text for hash {content_hash}")
                     text = cached_data["data"]["text"]
                     metadata = cached_data["data"]["metadata"]
                 else:
-                    # Process local file only
-                    if input_source.startswith("file://") or os.path.exists(input_source):
-                        # normalize local file path
-                        local_path = input_source.replace("file:/", "")
-                        logger.info(f"📄 Processing local file: {local_path}")
-
-                        with open(local_path, 'rb') as f:
-                            file_bytes = f.read()
-
-                        extraction_result = self.text_extractor.extract_text_from_bytes(
-                            file_bytes,
-                            os.path.basename(local_path),
-                            cleaning_options=CleaningOptions(
-                                normalize_unicode=True,
-                                clean_whitespace=True,
-                                preserve_structure=True,
-                                max_length=100000,
-                                enable_ocr=True,
-                            )
+                    extraction_result = self.text_extractor.extract_text_from_bytes(
+                        file_bytes,
+                        os.path.basename(local_path),
+                        cleaning_options=CleaningOptions(
+                            normalize_unicode=True,
+                            clean_whitespace=True,
+                            preserve_structure=True,
+                            max_length=100000,
+                            enable_ocr=True,
                         )
-                        text = extraction_result.text
-                        metadata = extraction_result.metadata
+                    )
+                    text = extraction_result.text
+                    metadata = extraction_result.metadata
+                    metadata["content_hash"] = content_hash
 
-                        cache_data = {
-                            "text": text,
-                            "metadata": metadata,
-                            "processing_time": metadata.get('processing_time', 0)
-                        }
-                        self.document_cache.set(input_source, cache_data)
-
-                    else:
-                        logger.error(f"Invalid input: {input_source}")
-                        return []
+                    cache_data = {
+                        "text": text,
+                        "metadata": metadata,
+                        "processing_time": metadata.get("processing_time", 0)
+                    }
+                    self.document_cache.set(content_hash, cache_data)
 
                 logger.info(f"✅ Extracted {len(text)} characters from {input_source}")
 
@@ -134,8 +134,17 @@ class DocumentProcessor:
                     logger.warning(f"No content extracted from {input_source}")
                     return []
 
+                if self.document_cache.is_ingested(content_hash):
+                    logger.info(f"⏭️ Skipping already indexed document hash {content_hash}")
+                    return []
+
                 # Create chunks
-                return self.chunk_text(text)
+                chunks = self.chunk_text(text)
+                for chunk in chunks:
+                    if hasattr(chunk, "metadata") and isinstance(chunk.metadata, dict):
+                        chunk.metadata["content_hash"] = content_hash
+                self.document_cache.mark_ingested(content_hash)
+                return chunks
 
             except Exception as e:
                 logger.error(f"Processing failed for {input_source}: {e}")

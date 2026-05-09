@@ -118,6 +118,15 @@ if __name__ == "__main__":
     import uvicorn
     host = os.getenv("API_HOST", settings.api.api_host)
     port = int(os.getenv("API_PORT", settings.api.api_port))
+    reload_enabled = settings.environment != "production"
     logger.info("=== STARTING UVICORN SERVER ===")
     logger.info(f"Server will start on http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_config=None, access_log=True)
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        reload=reload_enabled,
+        workers=1 if reload_enabled else settings.api.api_workers,
+        log_config=None,
+        access_log=True,
+    )
