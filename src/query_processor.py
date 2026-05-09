@@ -1,8 +1,9 @@
 """Query processing with LLM"""
 
 import logging
-from src.llm.prompt_templates import PromptTemplates
-from src.core.models import ContextWindow
+import re
+from types import SimpleNamespace
+from src.utils.prompt_loader import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +17,15 @@ class ProcessQuery:
         self.generation_config = generation_config
         self.memory_manager = memory_manager
         self.system_prompt = system_prompt
+        self.rag_prompt_template = load_prompt("prompts/rag_prompt.txt")
 
-    async def process(self, query: str, session_id: str = None) -> str:
+    def _clean_answer(self, answer: str) -> str:
+        """Remove prompt artifacts from the model response."""
+        cleaned = answer.strip()
+        cleaned = re.sub(r"^\s*Answer:\s*", "", cleaned, flags=re.IGNORECASE)
+        return cleaned.strip()
+
+    async def process(self, query: str, session_id: str = None):
         """Process query using ensemble search and LLM"""
         from src.utils.text_cleaner import fuzzy_matching
 
@@ -36,17 +44,13 @@ class ProcessQuery:
                         deduplicated_chunks.append(chunk)
                         break
 
-            retrieved_contexts = [f"[Chunk {i+1}]: {chunk.text}" for i, chunk in enumerate(deduplicated_chunks)]
+            retrieved_contexts = [f"[{i+1}] {chunk.text}" for i, chunk in enumerate(deduplicated_chunks)]
             memory_context = self.memory_manager.get_context(session_id) if self.memory_manager and session_id else ""
-            context_window = ContextWindow(
+            prompt = self.rag_prompt_template.format(
+                memory_context=memory_context or "None",
+                retrieved_contexts="\n".join(retrieved_contexts) or "None",
                 query=query,
-                retrieved_contexts=retrieved_contexts,
-                graph_context=None,
-                memory_context=memory_context or None,
-                system_prompt=self.system_prompt or "You are a helpful assistant.",
-                total_tokens=0,
             )
-            prompt = PromptTemplates.build_rag_prompt(context_window)
             logger.info(
                 "%s prompt for session %s:\n%s",
                 self.client.__class__.__name__,
@@ -66,16 +70,39 @@ class ProcessQuery:
                 logger.warning("LLM response missing text")
                 return "No response generated"
 
-            answer = response.strip()
+            answer = self._clean_answer(response)
+            citations = [
+                {
+                    "citation": f"[{i+1}]",
+                    "content": chunk.text,
+                    "chunk_id": chunk.chunk_id,
+                    "metadata": chunk.metadata,
+                }
+                for i, chunk in enumerate(deduplicated_chunks)
+            ]
+            confidence = 0.0
+            if search_results:
+                top_score = max(result.combined_score for result in search_results)
+                confidence = min(1.0, round(top_score * 5, 3))
             if self.memory_manager and session_id:
                 self.memory_manager.append_turn(session_id, "user", query)
                 self.memory_manager.append_turn(session_id, "assistant", answer)
             logger.info(f"Generated answer")
-            return answer
+            return SimpleNamespace(
+                answer=answer,
+                citations=citations,
+                confidence=confidence,
+                sources=deduplicated_chunks,
+            )
 
         except Exception as e:
             logger.error(f"Error in process: {e}")
-            return f"Error processing query: {e}"
+            return SimpleNamespace(
+                answer=f"Error processing query: {e}",
+                citations=[],
+                confidence=0.0,
+                sources=[],
+            )
 
 
 __all__ = ['ProcessQuery']
