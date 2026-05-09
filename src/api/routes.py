@@ -84,12 +84,12 @@ def create_router(
             raise HTTPException(status_code=500, detail=f"Ingestion error: {e}")
 
     @router.post("/query")
-    async def process_query(query: str):
+    async def process_query(query: str, session_id: str | None = None):
         try:
             processor = get_query_processor_fn()
             if processor is None:
                 raise HTTPException(status_code=400, detail="No documents indexed. Please ingest documents first.")
-            answer = await processor.process(query)
+            answer = await processor.process(query, session_id=session_id)
             return {"query": query, "answer": answer}
         except Exception as e:
             logger.error(f"Error in query processing: {e}")

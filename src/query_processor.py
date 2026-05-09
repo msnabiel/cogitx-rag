@@ -3,6 +3,8 @@
 import logging
 import asyncio
 from src.config.settings import settings
+from src.llm.prompt_templates import PromptTemplates
+from src.core.models import ContextWindow
 
 logger = logging.getLogger(__name__)
 
@@ -10,15 +12,16 @@ logger = logging.getLogger(__name__)
 class ProcessQuery:
     """Handles query processing with LLM"""
 
-    def __init__(self, search_methods, llm_client, generation_config):
+    def __init__(self, search_methods, llm_client, generation_config, memory_manager=None, system_prompt=""):
         self.search_methods = search_methods
         self.client = llm_client
         self.generation_config = generation_config
+        self.memory_manager = memory_manager
+        self.system_prompt = system_prompt
 
-    async def process(self, query: str) -> str:
+    async def process(self, query: str, session_id: str = None) -> str:
         """Process query using ensemble search and LLM"""
-        from src.utils.text_cleaner import fuzzy_matching, TextCleaner, CleaningOptions
-        from src.utils.prompt_loader import load_prompt
+        from src.utils.text_cleaner import fuzzy_matching
 
         try:
             # Retrieve chunks
@@ -35,28 +38,17 @@ class ProcessQuery:
                         deduplicated_chunks.append(chunk)
                         break
 
-            # Build context
-            context_parts = [
-                f"[Chunk {i+1}]: {chunk.text}"
-                for i, chunk in enumerate(deduplicated_chunks)
-            ]
-            cleaner = TextCleaner(CleaningOptions())
-            context = cleaner.clean_text("\n\n".join(context_parts))
-
-            # Load prompt
-            try:
-                prompt_template = load_prompt("prompts/phase1_prompt.txt")
-            except FileNotFoundError:
-                logger.warning("Prompt file not found, using default")
-                prompt_template = """Based on the following context, answer the question.
-
-Context: {context}
-
-Question: {query}
-
-Answer:"""
-
-            prompt = prompt_template.format(context=context, query=query)
+            retrieved_contexts = [f"[Chunk {i+1}]: {chunk.text}" for i, chunk in enumerate(deduplicated_chunks)]
+            memory_context = self.memory_manager.get_context(session_id) if self.memory_manager and session_id else ""
+            context_window = ContextWindow(
+                query=query,
+                retrieved_contexts=retrieved_contexts,
+                graph_context=None,
+                memory_context=memory_context or None,
+                system_prompt=self.system_prompt or "You are a helpful assistant.",
+                total_tokens=0,
+            )
+            prompt = PromptTemplates.build_rag_prompt(context_window)
             logger.info(f"Processing query with LLM")
 
             # Call LLM
@@ -72,6 +64,9 @@ Answer:"""
                 return "No response generated"
 
             answer = response.text.strip()
+            if self.memory_manager and session_id:
+                self.memory_manager.append_turn(session_id, "user", query)
+                self.memory_manager.append_turn(session_id, "assistant", answer)
             logger.info(f"Generated answer")
             return answer
 
