@@ -122,7 +122,7 @@ if __name__ == "__main__":
     logger.info("=== STARTING UVICORN SERVER ===")
     logger.info(f"Server will start on http://{host}:{port}")
     uvicorn.run(
-        app,
+        "main:app",
         host=host,
         port=port,
         reload=reload_enabled,
