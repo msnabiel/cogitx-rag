@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 from .text_cleaner import CleaningOptions, TextCleaner, clean_ocr_text
 
 # === Gemini Setup ===
-load_dotenv(dotenv_path=".env.local")
+load_dotenv(dotenv_path=".env")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # Replace with your Gemini API key
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
@@ -49,6 +49,21 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+def _annotate_page_text(page_text: str, page_number: int) -> str:
+    """Embed stable page and line markers into extracted text."""
+    annotated_lines = []
+    for line_number, line in enumerate(page_text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        annotated_lines.append(f"[Page {page_number} | Line {line_number}] {stripped}")
+
+    if not annotated_lines and page_text.strip():
+        annotated_lines.append(f"[Page {page_number} | Line 1] {page_text.strip()}")
+
+    return "\n".join(annotated_lines)
 
 @dataclass
 class ExtractionResult:
@@ -353,7 +368,7 @@ class PDFExtractor:
             else:
                 final_text = digital_text
             
-            return (page_num, final_text, ocr_used)
+            return (page_num, _annotate_page_text(final_text, page_num + 1), ocr_used)
             
         except Exception as e:
             logger.error(f"Failed to process page {page_num + 1}: {e}")
@@ -422,7 +437,8 @@ class PDFExtractor:
                 "method": "PyMuPDF_hybrid" if combine_digital_and_ocr else "PyMuPDF",
                 "ocr_used": False,
                 "ocr_pages": [],
-                "combine_digital_and_ocr": combine_digital_and_ocr
+                "combine_digital_and_ocr": combine_digital_and_ocr,
+                "page_markers": True,
             }
             
             # Process pages with controlled concurrency
@@ -459,6 +475,7 @@ class PDFExtractor:
             
             text = "\n\n".join(page_texts)
             metadata["ocr_used"] = len(metadata["ocr_pages"]) > 0
+            metadata["page_count"] = doc.page_count
             doc.close()
             
             processing_time = time.time() - start_time
@@ -478,10 +495,10 @@ class PDFExtractor:
                 reader = PdfReader(BytesIO(file_bytes))
                 page_texts = []
                 
-                for page in reader.pages:
+                for page_number, page in enumerate(reader.pages, 1):
                     page_text = page.extract_text() or ""
                     if page_text.strip():
-                        page_texts.append(page_text)
+                        page_texts.append(_annotate_page_text(page_text, page_number))
                 
                 text = "\n\n".join(page_texts)
                 processing_time = time.time() - start_time
@@ -490,9 +507,11 @@ class PDFExtractor:
                     text=text.strip(),
                     metadata={
                         "pages": len(reader.pages),
+                        "page_count": len(reader.pages),
                         "method": "PyPDF2_fallback",
                         "ocr_used": False,
-                        "fallback_used": True
+                        "fallback_used": True,
+                        "page_markers": True,
                     },
                     success=True,
                     processing_time=processing_time
@@ -1041,8 +1060,12 @@ class TextExtractor:
                 encoding_used = 'utf-8-ignore'
             
             return ExtractionResult(
-                text=text.strip(),
-                metadata={"encoding": encoding_used, "method": "direct"},
+                text=self._extract_lines_with_numbers(text.strip()),
+                metadata={
+                    "encoding": encoding_used,
+                    "method": "direct",
+                    "line_count": len(text.splitlines()) if text else 0,
+                },
                 success=True
             )
         except Exception as e:
@@ -1052,6 +1075,15 @@ class TextExtractor:
                 success=False,
                 error=str(e)
             )
+
+    def _extract_lines_with_numbers(self, text: str) -> str:
+        """Annotate plain-text lines with stable line numbers."""
+        numbered_lines = []
+        for line_number, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if stripped:
+                numbered_lines.append(f"[Line {line_number}] {stripped}")
+        return "\n".join(numbered_lines) if numbered_lines else text.strip()
     
     def _extract_email(self, file_bytes: bytes, options: CleaningOptions) -> ExtractionResult:
         try:

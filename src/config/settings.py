@@ -61,6 +61,7 @@ class MemorySettings(BaseSettings):
     enable_short_term_memory: bool = Field(default=True)
     enable_long_term_memory: bool = Field(default=True)
     enable_structured_memory: bool = Field(default=True)
+    conversation_window_size: int = Field(default=6)
 
 
 class ProcessingSettings(BaseSettings):
@@ -146,6 +147,13 @@ class SlackSettings(BaseSettings):
     slack_enabled: bool = Field(default=False)
 
 
+class TelegramSettings(BaseSettings):
+    """Telegram integration configuration."""
+
+    telegram_bot_token: str = Field(default="")
+    telegram_enabled: bool = Field(default=False)
+
+
 class LoggingSettings(BaseSettings):
     """Logging configuration."""
 
@@ -184,6 +192,7 @@ class Settings(BaseSettings):
     query: QuerySettings = Field(default_factory=QuerySettings)
     api: APISettings = Field(default_factory=APISettings)
     slack: SlackSettings = Field(default_factory=SlackSettings)
+    telegram: TelegramSettings = Field(default_factory=TelegramSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 
@@ -220,6 +229,9 @@ def _load_env_overrides() -> Dict[str, Any]:
             "slack_app_token": values.get("SLACK_APP_TOKEN", ""),
             "slack_signing_secret": values.get("SLACK_SIGNING_SECRET", ""),
         },
+        "telegram": {
+            "telegram_bot_token": values.get("TELEGRAM_BOT_TOKEN", ""),
+        },
     }
 
 
@@ -233,4 +245,5 @@ settings = Settings(**{
     "graph": {**_yaml_settings.get("graph", {}), **_env_overrides["graph"]},
     "memory": {**_yaml_settings.get("memory", {}), **_env_overrides["memory"]},
     "slack": {**_yaml_settings.get("slack", {}), **_env_overrides["slack"]},
+    "telegram": {**_yaml_settings.get("telegram", {}), **_env_overrides["telegram"]},
 })

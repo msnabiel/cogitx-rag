@@ -32,6 +32,7 @@ memory:
   enable_short_term_memory: true
   enable_long_term_memory: true
   enable_structured_memory: true
+  conversation_window_size: 6
 
 processing:
   max_workers: 10
@@ -82,6 +83,9 @@ api:
 
 slack:
   slack_enabled: true
+
+telegram:
+  telegram_enabled: false
 
 logging:
   log_level: INFO
