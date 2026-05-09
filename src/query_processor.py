@@ -49,6 +49,11 @@ class ProcessQuery:
                 total_tokens=0,
             )
             prompt = PromptTemplates.build_rag_prompt(context_window)
+            logger.info(
+                "Gemini prompt for session %s:\n%s",
+                session_id or "no-session",
+                prompt[:4000],
+            )
             logger.info(f"Processing query with LLM")
 
             # Call LLM
