@@ -529,6 +529,7 @@ class TextExtractor:
             ".tiff": self._extract_image,
             ".bmp": self._extract_image,
             ".txt": self._extract_text,
+            ".md": self._extract_text,
             ".eml": self._extract_email,
             ".html": self._extract_html,
             ".csv": self._extract_csv,

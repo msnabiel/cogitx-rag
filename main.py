@@ -1,14 +1,13 @@
 import os
 import torch
 from sentence_transformers import SentenceTransformer
-import google.genai
-from google.genai import types
+import asyncio
+from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from src.storage.memory.cache import DocumentCache
-from config import generation_config as gen_config
 from src.utils.logger import setup_logging, log_request_middleware
 from src.utils.prompt_loader import load_prompt
 from src.utils.chunking_strategies import chunk_text as chunk_text_strategy
@@ -19,6 +18,10 @@ from src.ingestion import DocumentProcessor
 from src.query_processor import ProcessQuery
 from src.api.routes import create_router
 from src.storage.memory.state_manager import RAGStateManager, ConversationMemoryManager
+from src.core.models import Query
+from src.llm.gemini_client import GeminiClient
+from src.llm.openai_client import OpenAIClient
+from src.integrations.slack.bot import start_slack_bot
 
 logger = setup_logging()
 logger.info("=== COGITX-RAG SYSTEM STARTING ===\n")
@@ -31,7 +34,7 @@ if DEVICE == "cuda":
     logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
 # Load env
-load_dotenv(dotenv_path=".env.local")
+load_dotenv(dotenv_path=".env")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Directories
@@ -70,11 +73,16 @@ document_cache = DocumentCache(cache_dir=CACHE_DIR, logger=logger)
 rag_state_manager = RAGStateManager(STATE_DIR, logger)
 conversation_memory = ConversationMemoryManager(CACHE_DIR, logger, window_size=6)
 
-# Gemini config
+# LLM config
 system_prompt = load_prompt("prompts/system_prompt.txt")
-gen_config['system_instruction'] = system_prompt
-generation_config = types.GenerateContentConfig(**gen_config)
-gemini_client = google.genai.Client(api_key=GEMINI_API_KEY)
+
+def build_llm_client():
+    provider = settings.llm.default_llm_provider
+    if provider == "openai":
+        return OpenAIClient()
+    return GeminiClient(api_key=GEMINI_API_KEY)
+
+llm_client = build_llm_client()
 
 def update_global_state(**kwargs):
     """Update global RAG state after indexing"""
@@ -114,12 +122,50 @@ def get_query_processor():
     if query_processor is None and search_methods is not None:
         query_processor = ProcessQuery(
             search_methods,
-            gemini_client,
-            generation_config,
+            llm_client,
+            generation_config=None,
             memory_manager=conversation_memory,
             system_prompt=system_prompt,
         )
     return query_processor
+
+async def query_rag_for_slack(query: Query):
+    """Run the current query workflow and adapt it for Slack."""
+    processor = get_query_processor()
+    answer = await processor.process(query.text, session_id=query.session_id)
+    return SimpleNamespace(
+        answer=answer,
+        confidence=0.0,
+        processing_time_ms=0.0,
+        sources=[],
+    )
+
+async def ingest_and_query_for_slack(file_path: str, query_text: str, session_id: str):
+    """Ingest a local file and answer a query against the refreshed index."""
+    file_url = f"file:/{os.path.abspath(file_path)}"
+    ingestion_results = await document_processor.ingest_documents_async([file_url])
+    processor = get_query_processor()
+    answer = await processor.process(query_text, session_id=session_id)
+    return {
+        "url": file_url,
+        "ingestion_results": ingestion_results,
+        "answer": answer,
+    }
+
+async def ingest_files_and_query_for_slack(file_paths: list[str], query_text: str, session_id: str):
+    """Ingest multiple local files and answer a query against the refreshed index."""
+    file_urls = [f"file:/{os.path.abspath(path)}" for path in file_paths]
+    ingestion_results = []
+    for file_url in file_urls:
+        ingestion_results.extend(await document_processor.ingest_documents_async([file_url]))
+
+    processor = get_query_processor()
+    answer = await processor.process(query_text, session_id=session_id)
+    return {
+        "urls": file_urls,
+        "ingestion_results": ingestion_results,
+        "answer": answer,
+    }
 
 # Initialize document processor
 document_processor = DocumentProcessor(
@@ -151,6 +197,22 @@ app = FastAPI(title="CogitX-RAG API", description="Production-grade RAG system",
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(create_router(UPLOAD_DIR, document_cache, document_processor, lambda: search_methods, lambda: chunks, get_query_processor), prefix="/api/v1")
 app.middleware("http")(log_request_middleware)
+
+
+@app.on_event("startup")
+async def startup_slack_bot():
+    slack_enabled = settings.slack.slack_enabled
+    logger.info(f"Slack enabled resolved to {slack_enabled}")
+    if slack_enabled:
+        logger.info("Slack enabled; starting Slack bot in background")
+        asyncio.create_task(
+            start_slack_bot(
+                query_rag_for_slack,
+                ingest_and_query_for_slack,
+                ingest_files_and_query_for_slack,
+                enabled=slack_enabled,
+            )
+        )
 
 if __name__ == "__main__":
     import uvicorn
