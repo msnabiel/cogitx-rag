@@ -3,7 +3,7 @@
 import os
 import json
 import hashlib
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 
 
 class DocumentCache:
@@ -13,6 +13,7 @@ class DocumentCache:
         self.cache_dir = cache_dir
         self.logger = logger
         os.makedirs(cache_dir, exist_ok=True)
+        self.index_registry_file = os.path.join(cache_dir, "ingested_hashes.json")
 
     def _get_cache_key(self, source: str) -> str:
         """Generate cache key from source"""
@@ -21,6 +22,24 @@ class DocumentCache:
     def _get_cache_path(self, key: str) -> str:
         """Get cache file path"""
         return os.path.join(self.cache_dir, f"{key}.json")
+
+    def _load_index_registry(self) -> Set[str]:
+        if not os.path.exists(self.index_registry_file):
+            return set()
+        try:
+            with open(self.index_registry_file, "r") as f:
+                data = json.load(f)
+            return set(data.get("ingested_hashes", []))
+        except Exception as e:
+            self.logger.warning(f"Failed to load index registry: {e}")
+            return set()
+
+    def _save_index_registry(self, hashes: Set[str]) -> None:
+        try:
+            with open(self.index_registry_file, "w") as f:
+                json.dump({"ingested_hashes": sorted(hashes)}, f)
+        except Exception as e:
+            self.logger.warning(f"Failed to save index registry: {e}")
 
     def get(self, source: str) -> Optional[Dict[str, Any]]:
         """Get cached document data"""
@@ -45,6 +64,17 @@ class DocumentCache:
                 json.dump({"data": data}, f)
         except Exception as e:
             self.logger.warning(f"Failed to cache {source}: {e}")
+
+    def is_ingested(self, content_hash: str) -> bool:
+        """Check whether a content hash has already been indexed."""
+        return content_hash in self._load_index_registry()
+
+    def mark_ingested(self, content_hash: str) -> None:
+        """Record a content hash as indexed."""
+        hashes = self._load_index_registry()
+        if content_hash not in hashes:
+            hashes.add(content_hash)
+            self._save_index_registry(hashes)
 
     def clear_all(self) -> bool:
         """Clear all cache entries"""
