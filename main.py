@@ -18,6 +18,7 @@ from src.index_builder import build_indices as build_indices_fn
 from src.ingestion import DocumentProcessor
 from src.query_processor import ProcessQuery
 from src.api.routes import create_router
+from src.storage.memory.state_manager import RAGStateManager, ConversationMemoryManager
 
 logger = setup_logging()
 logger.info("=== COGITX-RAG SYSTEM STARTING ===\n")
@@ -36,8 +37,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Directories
 UPLOAD_DIR = settings.api.upload_dir
 CACHE_DIR = settings.api.cache_dir
+STATE_DIR = os.getenv("RAG_STATE_DIR", "./data/rag_state")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(STATE_DIR, exist_ok=True)
 
 # Processing config
 EMBEDDING_BATCH_SIZE = settings.processing.embedding_batch_size_gpu if DEVICE == "cuda" else settings.processing.embedding_batch_size_cpu
@@ -64,6 +67,8 @@ query_processor = None
 
 # Cache
 document_cache = DocumentCache(cache_dir=CACHE_DIR, logger=logger)
+rag_state_manager = RAGStateManager(STATE_DIR, logger)
+conversation_memory = ConversationMemoryManager(CACHE_DIR, logger, window_size=6)
 
 # Gemini config
 system_prompt = load_prompt("prompts/system_prompt.txt")
@@ -85,7 +90,7 @@ def update_global_state(**kwargs):
 
 def build_indices(input_chunks):
     """Build FAISS + BM25 indices"""
-    return build_indices_fn(
+    search_state = build_indices_fn(
         chunks=input_chunks,
         embedding_generator=embedding_generator,
         bge_model=bge_model,
@@ -93,12 +98,27 @@ def build_indices(input_chunks):
         embedding_workers=EMBEDDING_WORKERS,
         update_globals_fn=update_global_state
     )
+    rag_state_manager.save(
+        faiss_index=faiss_index,
+        bm25=bm25,
+        chunks=chunks,
+        bge_embeddings=bge_embeddings,
+        all_mini_embeddings=all_mini_embeddings,
+        combined_embeddings=combined_embeddings,
+    )
+    return search_state
 
 def get_query_processor():
     """Get or initialize query processor"""
     global query_processor
     if query_processor is None and search_methods is not None:
-        query_processor = ProcessQuery(search_methods, gemini_client, generation_config)
+        query_processor = ProcessQuery(
+            search_methods,
+            gemini_client,
+            generation_config,
+            memory_manager=conversation_memory,
+            system_prompt=system_prompt,
+        )
     return query_processor
 
 # Initialize document processor
@@ -107,6 +127,24 @@ document_processor = DocumentProcessor(
     build_indices,
     document_cache
 )
+
+loaded_state = rag_state_manager.load()
+if loaded_state:
+    from src.search import SearchMethods
+    faiss_index = loaded_state["faiss_index"]
+    bm25 = loaded_state["bm25"]
+    chunks = loaded_state["chunks"]
+    bge_embeddings = loaded_state["bge_embeddings"]
+    all_mini_embeddings = loaded_state["all_mini_embeddings"]
+    combined_embeddings = loaded_state["combined_embeddings"]
+    search_methods = SearchMethods(
+        faiss_index=faiss_index,
+        bm25=bm25,
+        chunks=chunks,
+        bge_model=bge_model,
+        all_mini_model=all_mini_model,
+        all_mini_embeddings=all_mini_embeddings,
+    )
 
 # FastAPI app
 app = FastAPI(title="CogitX-RAG API", description="Production-grade RAG system", version="2.0.0")

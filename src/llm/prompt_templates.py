@@ -1,7 +1,7 @@
 """Prompt templates for RAG system."""
 
 from typing import List, Optional
-from core.models import ContextWindow
+from src.core.models import ContextWindow
 
 
 class PromptTemplates:
