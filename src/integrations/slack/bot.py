@@ -12,6 +12,20 @@ from src.config.settings import settings
 from src.core.models import Query
 
 
+def _format_citations(citations):
+    """Format citation records for Slack."""
+    if not citations:
+        return ""
+
+    lines = ["", "Sources:"]
+    for item in citations[:3]:
+        label = item.get("label") or item.get("citation") or "[?]"
+        content = item.get("content", "").strip().replace("\n", " ")
+        snippet = content[:140] + ("..." if len(content) > 140 else "")
+        lines.append(f"- {label}: {snippet}")
+    return "\n".join(lines)
+
+
 def create_slack_app(
     query_rag: Callable[[Query], Awaitable[Any]],
     ingest_and_query: Callable[[str, str, str], Awaitable[Any]],
@@ -70,13 +84,7 @@ def create_slack_app(
                             query_text,
                             f"slack_{channel}_{thread_ts}",
                         )
-                        citation_text = ""
-                        citations = response.get("citations", [])
-                        if citations:
-                            citation_text = "\n\n*Sources:*\n" + "\n".join(
-                                f"• {item['citation']} {item['content'][:120]}..."
-                                for item in citations[:3]
-                            )
+                        citation_text = _format_citations(response.get("citations", []))
                         await say(text=f"{response['answer']}{citation_text}", thread_ts=thread_ts)
                         return
                 finally:
@@ -106,7 +114,7 @@ def create_slack_app(
 
             if citations:
                 source_text = "\n".join(
-                    f"• {item['citation']} {item['content'][:100]}..."
+                    f"- {item.get('label', item.get('citation', '[?]'))}: {item.get('content', '')[:100]}..."
                     for item in citations[:3]
                 )
                 blocks.append({"type": "divider"})
@@ -158,13 +166,7 @@ def create_slack_app(
             response = await query_rag(query)
 
             citations = getattr(response, "citations", [])
-            citation_text = ""
-            if citations:
-                citation_text = "\n\nSources:\n" + "\n".join(
-                    f"• {item['citation']} {item['content'][:120]}..."
-                    for item in citations[:3]
-                )
-            await say(text=f"{response.answer}{citation_text}", response_type="ephemeral")
+            await say(text=f"{response.answer}{_format_citations(citations)}", response_type="ephemeral")
 
         except Exception as e:
             logger.error(f"Slack command error: {e}", exc_info=True)

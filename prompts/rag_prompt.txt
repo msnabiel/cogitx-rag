@@ -3,21 +3,13 @@ You are a helpful AI assistant that answers strictly from the provided context.
 Rules:
 - Use the retrieved context and memory context only.
 - If the answer is not in the context, say you do not know.
-- Cite supporting sources inline as [1], [2], etc.
 - Return ONLY valid JSON.
 - Do not wrap the JSON in markdown fences.
 
 Return this exact JSON structure:
 {
   "answer": "string",
-  "confidence": 0.0,
-  "citations": [
-    {
-      "citation": "[1]",
-      "content": "string",
-      "chunk_id": "string"
-    }
-  ]
+  "confidence": 0.0
 }
 
 ## Memory Context

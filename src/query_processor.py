@@ -39,6 +39,28 @@ class ProcessQuery:
         citations = payload.get("citations", [])
         return answer, confidence, citations
 
+    def _format_source_label(self, chunk, index: int) -> str:
+        """Build a human-readable source label from chunk metadata."""
+        metadata = getattr(chunk, "metadata", {}) or {}
+        filename = metadata.get("filename") or metadata.get("source") or metadata.get("title") or "Document"
+        page = metadata.get("page") or metadata.get("page_number")
+        if page is not None:
+            return f"[{index}] {filename} (page {page})"
+        return f"[{index}] {filename}"
+
+    def _build_citations(self, chunks):
+        """Build citation records from retrieved chunks."""
+        citations = []
+        for i, chunk in enumerate(chunks, 1):
+            citations.append({
+                "citation": f"[{i}]",
+                "label": self._format_source_label(chunk, i),
+                "content": chunk.text,
+                "chunk_id": chunk.chunk_id,
+                "metadata": chunk.metadata,
+            })
+        return citations
+
     def _render_prompt(self, memory_context: str, retrieved_contexts: str, query: str) -> str:
         """Render the prompt template while preserving literal JSON braces."""
         template = self.rag_prompt_template.replace("{", "{{").replace("}", "}}")
@@ -96,29 +118,8 @@ class ProcessQuery:
                 logger.warning("LLM response missing text")
                 return "No response generated"
 
-            answer, confidence, citations = self._parse_json_response(response)
-            fallback_citations = [
-                {
-                    "citation": f"[{i+1}]",
-                    "content": chunk.text,
-                    "chunk_id": chunk.chunk_id,
-                    "metadata": chunk.metadata,
-                }
-                for i, chunk in enumerate(deduplicated_chunks)
-            ]
-            if not citations:
-                citations = fallback_citations
-            elif isinstance(citations, list):
-                normalized = []
-                for i, item in enumerate(citations, 1):
-                    if isinstance(item, dict):
-                        normalized.append({
-                            "citation": item.get("citation", f"[{i}]"),
-                            "content": item.get("content", ""),
-                            "chunk_id": item.get("chunk_id", ""),
-                            "metadata": item.get("metadata", {}),
-                        })
-                citations = normalized or fallback_citations
+            answer, confidence, _ = self._parse_json_response(response)
+            citations = self._build_citations(deduplicated_chunks)
             if confidence <= 0.0 and search_results:
                 top_score = max(result.combined_score for result in search_results)
                 confidence = min(1.0, round(top_score * 5, 3))
