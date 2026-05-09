@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from loguru import logger
-from embeddings.openai_embeddings import OpenAIEmbedding
+from src.embeddings.openai_embeddings import OpenAIEmbedding
 from embeddings.gemini_embeddings import GeminiEmbedding
 from vector_stores.factory import VectorStoreFactory
 from graph.neo4j_client import Neo4jClient

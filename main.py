@@ -1,6 +1,8 @@
 import os
 import torch
 from sentence_transformers import SentenceTransformer
+import asyncio
+from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -16,6 +18,7 @@ from src.ingestion import DocumentProcessor
 from src.query_processor import ProcessQuery
 from src.api.routes import create_router
 from src.storage.memory.state_manager import RAGStateManager, ConversationMemoryManager
+from src.core.models import Query
 from src.llm.gemini_client import GeminiClient
 from src.llm.openai_client import OpenAIClient
 from src.integrations.slack.bot import start_slack_bot
@@ -126,6 +129,17 @@ def get_query_processor():
         )
     return query_processor
 
+async def query_rag_for_slack(query: Query):
+    """Run the current query workflow and adapt it for Slack."""
+    processor = get_query_processor()
+    answer = await processor.process(query.text, session_id=query.session_id)
+    return SimpleNamespace(
+        answer=answer,
+        confidence=0.0,
+        processing_time_ms=0.0,
+        sources=[],
+    )
+
 # Initialize document processor
 document_processor = DocumentProcessor(
     lambda text: chunk_text_strategy(text, model=bge_model),
@@ -163,8 +177,7 @@ async def startup_slack_bot():
     slack_enabled = os.getenv("SLACK_ENABLED", str(settings.slack.slack_enabled)).lower() in {"1", "true", "yes", "on"}
     if slack_enabled:
         logger.info("Slack enabled; starting Slack bot in background")
-        import asyncio
-        asyncio.create_task(start_slack_bot())
+        asyncio.create_task(start_slack_bot(query_rag_for_slack))
 
 if __name__ == "__main__":
     import uvicorn

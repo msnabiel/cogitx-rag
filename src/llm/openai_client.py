@@ -3,9 +3,9 @@
 from typing import List, Optional
 from openai import AsyncOpenAI
 from loguru import logger
-from llm.base import BaseLLM
-from core.exceptions import LLMError
-from config.settings import settings
+from src.llm.base import BaseLLM
+from src.core.types_and_exception import LLMError
+from src.config.settings import settings
 
 
 class OpenAIClient(BaseLLM):
