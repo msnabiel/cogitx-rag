@@ -1,0 +1,93 @@
+debug: false
+environment: development
+
+llm:
+  openai_model: gpt-4-turbo-preview
+  openai_embedding_model: text-embedding-3-large
+  openai_base_url: ""
+  gemini_model: gemini-2.5-flash
+  gemini_embedding_model: models/embedding-001
+  default_llm_provider: gemini
+
+vector_store:
+  vector_store_type: faiss
+  pinecone_environment: us-east-1
+  pinecone_index_name: cogitx-rag
+  pinecone_dimension: 1536
+  faiss_index_path: ./data/faiss_index
+  faiss_dimension: 1536
+
+graph:
+  neo4j_uri: bolt://localhost:7687
+  neo4j_user: neo4j
+  neo4j_password: your-neo4j-password
+  neo4j_database: neo4j
+
+memory:
+  redis_host: localhost
+  redis_port: 6379
+  redis_db: 0
+  redis_password: ""
+  cache_ttl: 3600
+  enable_short_term_memory: true
+  enable_long_term_memory: true
+  enable_structured_memory: true
+
+processing:
+  max_workers: 10
+  chunk_size: 512
+  overlap_size: 50
+  semantic_threshold_chunk_score: 0.25
+  ensemble_threshold_score: 0.0
+  jaccard_similarity_threshold: 0.85
+  contained_ratio: 0.85
+  fuzzy_threshold: 85
+  embedding_batch_size_gpu: 64
+  embedding_batch_size_cpu: 32
+  embedding_workers_gpu: 2
+  embedding_workers_cpu: 4
+
+retrieval:
+  vector_top_k: 10
+  vector_similarity_threshold: 0.7
+  bm25_top_k: 10
+  bm25_k1: 1.5
+  bm25_b: 0.75
+  graph_max_depth: 3
+  graph_max_results: 20
+  hybrid_vector_weight: 0.5
+  hybrid_bm25_weight: 0.3
+  hybrid_graph_weight: 0.2
+  rerank_top_k: 5
+
+context:
+  max_context_length: 8000
+  context_compression_enabled: true
+  compression_ratio: 0.6
+
+query:
+  query_expansion_enabled: true
+  query_decomposition_enabled: false
+  max_sub_queries: 3
+
+api:
+  api_host: 0.0.0.0
+  api_port: 8000
+  api_workers: 4
+  api_reload: false
+  cors_origins:
+    - "*"
+  upload_dir: ./uploaded_docs
+  cache_dir: /tmp/document_cache
+
+slack:
+  slack_enabled: true
+
+logging:
+  log_level: INFO
+  log_format: json
+  log_file: ./logs/cogitx-rag.log
+
+monitoring:
+  metrics_enabled: true
+  metrics_port: 9090

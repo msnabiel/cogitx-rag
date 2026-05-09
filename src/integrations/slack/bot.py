@@ -1,7 +1,10 @@
 """Slack bot integration for CogitX-RAG"""
 
 import asyncio
+import os
+import tempfile
 from typing import Any, Callable, Awaitable
+import httpx
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from loguru import logger
@@ -9,7 +12,7 @@ from src.config.settings import settings
 from src.core.models import Query
 
 
-def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]]):
+def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]], ingest_and_query: Callable[[str, str, str], Awaitable[Any]]):
     """Create a Slack app wired to the current RAG workflow."""
     app = AsyncApp(
         token=settings.slack.slack_bot_token,
@@ -28,6 +31,33 @@ def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]]):
 
             logger.info(f"Slack query from {user_id}: {query_text}")
             await say(text="🤔 Processing your question...", thread_ts=thread_ts)
+
+            files = event.get("files", [])
+            if files:
+                first_file = files[0]
+                file_name = first_file.get("name", "uploaded_file")
+                download_url = first_file.get("url_private_download") or first_file.get("url_private")
+                if download_url:
+                    token = settings.slack.slack_bot_token
+                    async with httpx.AsyncClient(timeout=120) as http_client:
+                        response = await http_client.get(
+                            download_url,
+                            headers={"Authorization": f"Bearer {token}"},
+                        )
+                        response.raise_for_status()
+                        suffix = os.path.splitext(file_name)[1]
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                            tmp.write(response.content)
+                            tmp_path = tmp.name
+                    try:
+                        response = await ingest_and_query(tmp_path, query_text, f"slack_{channel}_{thread_ts}")
+                    finally:
+                        try:
+                            os.remove(tmp_path)
+                        except OSError:
+                            pass
+                    await say(text=f"*Question:* {query_text}\n\n*Answer:*\n{response['answer']}", thread_ts=thread_ts)
+                    return
 
             query = Query(
                 text=query_text,
@@ -110,9 +140,13 @@ def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]]):
     return app
 
 
-async def start_slack_bot(query_rag: Callable[[Query], Awaitable[Any]]):
+async def start_slack_bot(
+    query_rag: Callable[[Query], Awaitable[Any]],
+    ingest_and_query: Callable[[str, str, str], Awaitable[Any]],
+    enabled: bool = True,
+):
     """Start Slack bot in socket mode"""
-    if not settings.slack.slack_enabled:
+    if not enabled:
         logger.warning("Slack integration disabled in settings")
         return
 
@@ -122,7 +156,7 @@ async def start_slack_bot(query_rag: Callable[[Query], Awaitable[Any]]):
 
     logger.info("Starting Slack bot...")
 
-    app = create_slack_app(query_rag)
+    app = create_slack_app(query_rag, ingest_and_query)
     handler = AsyncSocketModeHandler(app, settings.slack.slack_app_token)
     await handler.start_async()
 

@@ -34,7 +34,7 @@ if DEVICE == "cuda":
     logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
 # Load env
-load_dotenv(dotenv_path=".env.local")
+load_dotenv(dotenv_path=".env")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Directories
@@ -140,6 +140,18 @@ async def query_rag_for_slack(query: Query):
         sources=[],
     )
 
+async def ingest_and_query_for_slack(file_path: str, query_text: str, session_id: str):
+    """Ingest a local file and answer a query against the refreshed index."""
+    file_url = f"file:/{os.path.abspath(file_path)}"
+    ingestion_results = await document_processor.ingest_documents_async([file_url])
+    processor = get_query_processor()
+    answer = await processor.process(query_text, session_id=session_id)
+    return {
+        "url": file_url,
+        "ingestion_results": ingestion_results,
+        "answer": answer,
+    }
+
 # Initialize document processor
 document_processor = DocumentProcessor(
     lambda text: chunk_text_strategy(text, model=bge_model),
@@ -174,10 +186,11 @@ app.middleware("http")(log_request_middleware)
 
 @app.on_event("startup")
 async def startup_slack_bot():
-    slack_enabled = os.getenv("SLACK_ENABLED", str(settings.slack.slack_enabled)).lower() in {"1", "true", "yes", "on"}
+    slack_enabled = settings.slack.slack_enabled
+    logger.info(f"Slack enabled resolved to {slack_enabled}")
     if slack_enabled:
         logger.info("Slack enabled; starting Slack bot in background")
-        asyncio.create_task(start_slack_bot(query_rag_for_slack))
+        asyncio.create_task(start_slack_bot(query_rag_for_slack, ingest_and_query_for_slack, enabled=slack_enabled))
 
 if __name__ == "__main__":
     import uvicorn

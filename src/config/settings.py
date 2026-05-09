@@ -1,6 +1,10 @@
 """Centralized configuration management using Pydantic settings."""
 
-from typing import List, Literal
+from pathlib import Path
+from typing import List, Literal, Any, Dict
+
+import yaml
+from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -184,5 +188,49 @@ class Settings(BaseSettings):
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
 
 
+def _load_yaml_settings() -> Dict[str, Any]:
+    """Load non-secret settings from the project root YAML file."""
+    yaml_path = Path(__file__).resolve().parents[2] / "settings.yaml"
+    if not yaml_path.exists():
+        return {}
+
+    with open(yaml_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def _load_env_overrides() -> Dict[str, Any]:
+    """Load secret values from .env and map them into nested settings."""
+    values = dotenv_values(".env")
+    return {
+        "llm": {
+            "openai_api_key": values.get("OPENAI_API_KEY", ""),
+            "gemini_api_key": values.get("GEMINI_API_KEY", ""),
+        },
+        "vector_store": {
+            "pinecone_api_key": values.get("PINECONE_API_KEY", ""),
+        },
+        "graph": {
+            "neo4j_password": values.get("NEO4J_PASSWORD", ""),
+        },
+        "memory": {
+            "redis_password": values.get("REDIS_PASSWORD", ""),
+        },
+        "slack": {
+            "slack_bot_token": values.get("SLACK_BOT_TOKEN", ""),
+            "slack_app_token": values.get("SLACK_APP_TOKEN", ""),
+            "slack_signing_secret": values.get("SLACK_SIGNING_SECRET", ""),
+        },
+    }
+
+
 # Global settings instance
-settings = Settings()
+_yaml_settings = _load_yaml_settings()
+_env_overrides = _load_env_overrides()
+settings = Settings(**{
+    **_yaml_settings,
+    "llm": {**_yaml_settings.get("llm", {}), **_env_overrides["llm"]},
+    "vector_store": {**_yaml_settings.get("vector_store", {}), **_env_overrides["vector_store"]},
+    "graph": {**_yaml_settings.get("graph", {}), **_env_overrides["graph"]},
+    "memory": {**_yaml_settings.get("memory", {}), **_env_overrides["memory"]},
+    "slack": {**_yaml_settings.get("slack", {}), **_env_overrides["slack"]},
+})

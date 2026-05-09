@@ -6,7 +6,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, UploadFile, File
 import logging
 
-from src.core.models import SearchRequest
+from src.core.models import SearchRequest, Query
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,41 @@ def create_router(
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
             raise HTTPException(status_code=500, detail=f"Upload error: {e}")
+
+    @router.post("/upload-query")
+    async def upload_and_query(file: UploadFile = File(...), query: str = ""):
+        try:
+            if not query.strip():
+                raise HTTPException(status_code=400, detail="Query text is required")
+
+            logger.info(f"Uploading file and querying: {file.filename}")
+            file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
+            unique_filename = f"{uuid.uuid4()}{file_extension}"
+            file_path = os.path.join(upload_dir, unique_filename)
+            with open(file_path, "wb") as buffer:
+                content = await file.read()
+                buffer.write(content)
+
+            file_url = f"file:/{os.path.abspath(file_path)}"
+            ingestion_results = await document_processor.ingest_documents_async([file_url])
+
+            processor = get_query_processor_fn()
+            if processor is None:
+                raise HTTPException(status_code=400, detail="No documents indexed. Please ingest documents first.")
+
+            answer = await processor.process(query)
+            return {
+                "url": file_url,
+                "filename": file.filename,
+                "size": len(content),
+                "status": "success",
+                "ingestion_results": ingestion_results,
+                "query": query,
+                "answer": answer,
+            }
+        except Exception as e:
+            logger.error(f"Error in upload-query: {e}")
+            raise HTTPException(status_code=500, detail=f"Upload/query error: {e}")
 
     @router.post("/search")
     async def search_documents(request: SearchRequest):
