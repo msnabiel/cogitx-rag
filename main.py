@@ -132,12 +132,13 @@ def get_query_processor():
 async def query_rag_for_slack(query: Query):
     """Run the current query workflow and adapt it for Slack."""
     processor = get_query_processor()
-    answer = await processor.process(query.text, session_id=query.session_id)
+    result = await processor.process(query.text, session_id=query.session_id)
     return SimpleNamespace(
-        answer=answer,
-        confidence=0.0,
+        answer=result.answer,
+        confidence=result.confidence,
         processing_time_ms=0.0,
-        sources=[],
+        sources=result.sources,
+        citations=result.citations,
     )
 
 async def ingest_and_query_for_slack(file_path: str, query_text: str, session_id: str):
@@ -145,11 +146,13 @@ async def ingest_and_query_for_slack(file_path: str, query_text: str, session_id
     file_url = f"file:/{os.path.abspath(file_path)}"
     ingestion_results = await document_processor.ingest_documents_async([file_url])
     processor = get_query_processor()
-    answer = await processor.process(query_text, session_id=session_id)
+    result = await processor.process(query_text, session_id=session_id)
     return {
         "url": file_url,
         "ingestion_results": ingestion_results,
-        "answer": answer,
+        "answer": result.answer,
+        "citations": result.citations,
+        "confidence": result.confidence,
     }
 
 async def ingest_files_and_query_for_slack(file_paths: list[str], query_text: str, session_id: str):
@@ -160,11 +163,13 @@ async def ingest_files_and_query_for_slack(file_paths: list[str], query_text: st
         ingestion_results.extend(await document_processor.ingest_documents_async([file_url]))
 
     processor = get_query_processor()
-    answer = await processor.process(query_text, session_id=session_id)
+    result = await processor.process(query_text, session_id=session_id)
     return {
         "urls": file_urls,
         "ingestion_results": ingestion_results,
-        "answer": answer,
+        "answer": result.answer,
+        "citations": result.citations,
+        "confidence": result.confidence,
     }
 
 # Initialize document processor

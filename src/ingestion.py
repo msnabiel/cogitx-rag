@@ -129,7 +129,7 @@ class DocumentProcessor:
                     self.document_cache.set(content_hash, cache_data)
 
                 logger.info(f"✅ Extracted {len(text)} characters from {input_source}")
-
+                logger.info(f"Extracted preview: {text[:500]}")
                 if not text.strip():
                     logger.warning(f"No content extracted from {input_source}")
                     return []

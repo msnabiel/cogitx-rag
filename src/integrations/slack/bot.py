@@ -12,6 +12,20 @@ from src.config.settings import settings
 from src.core.models import Query
 
 
+def _format_citations(citations):
+    """Format citation records for Slack."""
+    if not citations:
+        return ""
+
+    lines = ["", "Sources:"]
+    for item in citations[:3]:
+        label = item.get("label") or item.get("citation") or "[?]"
+        content = item.get("content", "").strip().replace("\n", " ")
+        snippet = content[:140] + ("..." if len(content) > 140 else "")
+        lines.append(f"- {label}: {snippet}")
+    return "\n".join(lines)
+
+
 def create_slack_app(
     query_rag: Callable[[Query], Awaitable[Any]],
     ingest_and_query: Callable[[str, str, str], Awaitable[Any]],
@@ -70,7 +84,8 @@ def create_slack_app(
                             query_text,
                             f"slack_{channel}_{thread_ts}",
                         )
-                        await say(text=response["answer"], thread_ts=thread_ts)
+                        citation_text = _format_citations(response.get("citations", []))
+                        await say(text=f"{response['answer']}{citation_text}", thread_ts=thread_ts)
                         return
                 finally:
                     for tmp_path in tmp_paths:
@@ -89,32 +104,34 @@ def create_slack_app(
             )
             response = await query_rag(query)
 
+            citations = getattr(response, "citations", [])
             blocks = [
                 {
                     "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Answer:*\n{response.answer}"}
-                },
-                {"type": "divider"},
-                {
-                    "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": f"⚡ Confidence: {response.confidence:.0%} | ⏱️ {response.processing_time_ms:.0f}ms | 📚 {len(response.sources)} sources"
-                        }
-                    ]
+                    "text": {"type": "mrkdwn", "text": response.answer}
                 }
             ]
 
-            if response.sources:
-                source_text = "\n".join([
-                    f"• {i}. [{s.source.value}] {s.content[:100]}..."
-                    for i, s in enumerate(response.sources[:3], 1)
-                ])
-                blocks.insert(-1, {
+            if citations:
+                source_text = "\n".join(
+                    f"- {item.get('label', item.get('citation', '[?]'))}: {item.get('content', '')[:100]}..."
+                    for item in citations[:3]
+                )
+                blocks.append({"type": "divider"})
+                blocks.append({
                     "type": "section",
                     "text": {"type": "mrkdwn", "text": f"*Sources:*\n{source_text}"}
                 })
+
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"Confidence: {getattr(response, 'confidence', 0.0):.0%}"
+                    }
+                ]
+            })
 
             await say(blocks=blocks, thread_ts=thread_ts)
 
@@ -148,7 +165,8 @@ def create_slack_app(
             )
             response = await query_rag(query)
 
-            await say(text=response.answer, response_type="ephemeral")
+            citations = getattr(response, "citations", [])
+            await say(text=f"{response.answer}{_format_citations(citations)}", response_type="ephemeral")
 
         except Exception as e:
             logger.error(f"Slack command error: {e}", exc_info=True)

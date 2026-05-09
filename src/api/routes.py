@@ -67,7 +67,7 @@ def create_router(
             if processor is None:
                 raise HTTPException(status_code=400, detail="No documents indexed. Please ingest documents first.")
 
-            answer = await processor.process(query)
+            result = await processor.process(query)
             return {
                 "url": file_url,
                 "filename": file.filename,
@@ -75,7 +75,9 @@ def create_router(
                 "status": "success",
                 "ingestion_results": ingestion_results,
                 "query": query,
-                "answer": answer,
+                "answer": result.answer,
+                "citations": result.citations,
+                "confidence": result.confidence,
             }
         except Exception as e:
             logger.error(f"Error in upload-query: {e}")
@@ -124,8 +126,13 @@ def create_router(
             processor = get_query_processor_fn()
             if processor is None:
                 raise HTTPException(status_code=400, detail="No documents indexed. Please ingest documents first.")
-            answer = await processor.process(query, session_id=session_id)
-            return {"query": query, "answer": answer}
+            result = await processor.process(query, session_id=session_id)
+            return {
+                "query": query,
+                "answer": result.answer,
+                "citations": result.citations,
+                "confidence": result.confidence,
+            }
         except Exception as e:
             logger.error(f"Error in query processing: {e}")
             raise HTTPException(status_code=500, detail=f"Query processing error: {e}")
