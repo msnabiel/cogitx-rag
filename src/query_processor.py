@@ -39,6 +39,18 @@ class ProcessQuery:
         citations = payload.get("citations", [])
         return answer, confidence, citations
 
+    def _render_prompt(self, memory_context: str, retrieved_contexts: str, query: str) -> str:
+        """Render the prompt template while preserving literal JSON braces."""
+        template = self.rag_prompt_template.replace("{", "{{").replace("}", "}}")
+        template = template.replace("{{memory_context}}", "{memory_context}")
+        template = template.replace("{{retrieved_contexts}}", "{retrieved_contexts}")
+        template = template.replace("{{query}}", "{query}")
+        return template.format(
+            memory_context=memory_context or "None",
+            retrieved_contexts=retrieved_contexts or "None",
+            query=query,
+        )
+
     async def process(self, query: str, session_id: str = None):
         """Process query using ensemble search and LLM"""
         from src.utils.text_cleaner import fuzzy_matching
@@ -60,7 +72,7 @@ class ProcessQuery:
 
             retrieved_contexts = [f"[{i+1}] {chunk.text}" for i, chunk in enumerate(deduplicated_chunks)]
             memory_context = self.memory_manager.get_context(session_id) if self.memory_manager and session_id else ""
-            prompt = self.rag_prompt_template.format(
+            prompt = self._render_prompt(
                 memory_context=memory_context or "None",
                 retrieved_contexts="\n".join(retrieved_contexts) or "None",
                 query=query,
