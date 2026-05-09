@@ -12,7 +12,11 @@ from src.config.settings import settings
 from src.core.models import Query
 
 
-def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]], ingest_and_query: Callable[[str, str, str], Awaitable[Any]]):
+def create_slack_app(
+    query_rag: Callable[[Query], Awaitable[Any]],
+    ingest_and_query: Callable[[str, str, str], Awaitable[Any]],
+    ingest_files_and_query: Callable[[list[str], str, str], Awaitable[Any]],
+):
     """Create a Slack app wired to the current RAG workflow."""
     app = AsyncApp(
         token=settings.slack.slack_bot_token,
@@ -34,30 +38,46 @@ def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]], ingest_and_qu
 
             files = event.get("files", [])
             if files:
-                first_file = files[0]
-                file_name = first_file.get("name", "uploaded_file")
-                download_url = first_file.get("url_private_download") or first_file.get("url_private")
-                if download_url:
-                    token = settings.slack.slack_bot_token
-                    async with httpx.AsyncClient(timeout=120) as http_client:
-                        response = await http_client.get(
-                            download_url,
-                            headers={"Authorization": f"Bearer {token}"},
+                token = settings.slack.slack_bot_token
+                tmp_paths = []
+                try:
+                    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as http_client:
+                        for file_item in files:
+                            file_id = file_item.get("id")
+                            file_name = file_item.get("name", "uploaded_file")
+                            if not file_id:
+                                continue
+
+                            file_info = await client.files_info(file=file_id)
+                            file_obj = file_info.get("file", {})
+                            download_url = file_obj.get("url_private_download") or file_obj.get("url_private")
+                            if not download_url:
+                                continue
+
+                            response = await http_client.get(
+                                download_url,
+                                headers={"Authorization": f"Bearer {token}"},
+                            )
+                            response.raise_for_status()
+                            suffix = os.path.splitext(file_name)[1]
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                                tmp.write(response.content)
+                                tmp_paths.append(tmp.name)
+
+                    if tmp_paths:
+                        response = await ingest_files_and_query(
+                            tmp_paths,
+                            query_text,
+                            f"slack_{channel}_{thread_ts}",
                         )
-                        response.raise_for_status()
-                        suffix = os.path.splitext(file_name)[1]
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                            tmp.write(response.content)
-                            tmp_path = tmp.name
-                    try:
-                        response = await ingest_and_query(tmp_path, query_text, f"slack_{channel}_{thread_ts}")
-                    finally:
+                        await say(text=response["answer"], thread_ts=thread_ts)
+                        return
+                finally:
+                    for tmp_path in tmp_paths:
                         try:
                             os.remove(tmp_path)
                         except OSError:
                             pass
-                    await say(text=f"*Question:* {query_text}\n\n*Answer:*\n{response['answer']}", thread_ts=thread_ts)
-                    return
 
             query = Query(
                 text=query_text,
@@ -99,7 +119,7 @@ def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]], ingest_and_qu
             await say(blocks=blocks, thread_ts=thread_ts)
 
         except Exception as e:
-            logger.error(f"Slack query error: {e}", exc_info=True)
+            logger.error("Slack query error: {}", str(e))
             await say(text=f"❌ Error: {str(e)}", thread_ts=thread_ts)
 
     @app.command("/cogitx")
@@ -128,10 +148,7 @@ def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]], ingest_and_qu
             )
             response = await query_rag(query)
 
-            await say(
-                text=f"*Question:* {query_text}\n\n*Answer:*\n{response.answer}\n\n_Confidence: {response.confidence:.0%} | {response.processing_time_ms:.0f}ms_",
-                response_type="ephemeral"
-            )
+            await say(text=response.answer, response_type="ephemeral")
 
         except Exception as e:
             logger.error(f"Slack command error: {e}", exc_info=True)
@@ -143,6 +160,7 @@ def create_slack_app(query_rag: Callable[[Query], Awaitable[Any]], ingest_and_qu
 async def start_slack_bot(
     query_rag: Callable[[Query], Awaitable[Any]],
     ingest_and_query: Callable[[str, str, str], Awaitable[Any]],
+    ingest_files_and_query: Callable[[list[str], str, str], Awaitable[Any]],
     enabled: bool = True,
 ):
     """Start Slack bot in socket mode"""
@@ -156,7 +174,7 @@ async def start_slack_bot(
 
     logger.info("Starting Slack bot...")
 
-    app = create_slack_app(query_rag, ingest_and_query)
+    app = create_slack_app(query_rag, ingest_and_query, ingest_files_and_query)
     handler = AsyncSocketModeHandler(app, settings.slack.slack_app_token)
     await handler.start_async()
 

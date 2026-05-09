@@ -152,6 +152,21 @@ async def ingest_and_query_for_slack(file_path: str, query_text: str, session_id
         "answer": answer,
     }
 
+async def ingest_files_and_query_for_slack(file_paths: list[str], query_text: str, session_id: str):
+    """Ingest multiple local files and answer a query against the refreshed index."""
+    file_urls = [f"file:/{os.path.abspath(path)}" for path in file_paths]
+    ingestion_results = []
+    for file_url in file_urls:
+        ingestion_results.extend(await document_processor.ingest_documents_async([file_url]))
+
+    processor = get_query_processor()
+    answer = await processor.process(query_text, session_id=session_id)
+    return {
+        "urls": file_urls,
+        "ingestion_results": ingestion_results,
+        "answer": answer,
+    }
+
 # Initialize document processor
 document_processor = DocumentProcessor(
     lambda text: chunk_text_strategy(text, model=bge_model),
@@ -190,7 +205,14 @@ async def startup_slack_bot():
     logger.info(f"Slack enabled resolved to {slack_enabled}")
     if slack_enabled:
         logger.info("Slack enabled; starting Slack bot in background")
-        asyncio.create_task(start_slack_bot(query_rag_for_slack, ingest_and_query_for_slack, enabled=slack_enabled))
+        asyncio.create_task(
+            start_slack_bot(
+                query_rag_for_slack,
+                ingest_and_query_for_slack,
+                ingest_files_and_query_for_slack,
+                enabled=slack_enabled,
+            )
+        )
 
 if __name__ == "__main__":
     import uvicorn
