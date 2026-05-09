@@ -21,12 +21,13 @@ class OpenAIClient(BaseLLM):
         """
         api_key = api_key or settings.llm.openai_api_key
         model_name = model_name or settings.llm.openai_model
+        base_url = settings.llm.openai_base_url or None
 
         if not api_key:
             raise LLMError("OpenAI API key not provided")
 
         super().__init__(model_name=model_name)
-        self.client = AsyncOpenAI(api_key=api_key)
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     async def generate(
         self,

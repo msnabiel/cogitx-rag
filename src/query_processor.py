@@ -1,8 +1,6 @@
 """Query processing with LLM"""
 
 import logging
-import asyncio
-from src.config.settings import settings
 from src.llm.prompt_templates import PromptTemplates
 from src.core.models import ContextWindow
 
@@ -50,25 +48,25 @@ class ProcessQuery:
             )
             prompt = PromptTemplates.build_rag_prompt(context_window)
             logger.info(
-                "Gemini prompt for session %s:\n%s",
+                "%s prompt for session %s:\n%s",
+                self.client.__class__.__name__,
                 session_id or "no-session",
                 prompt[:4000],
             )
             logger.info(f"Processing query with LLM")
 
             # Call LLM
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=settings.llm.gemini_model,
-                config=self.generation_config,
-                contents=prompt
+            response = await self.client.generate(
+                prompt=prompt,
+                temperature=getattr(self.generation_config, "temperature", 0.7),
+                max_tokens=getattr(self.generation_config, "max_output_tokens", None),
             )
 
-            if not hasattr(response, "text"):
+            if not response:
                 logger.warning("LLM response missing text")
                 return "No response generated"
 
-            answer = response.text.strip()
+            answer = response.strip()
             if self.memory_manager and session_id:
                 self.memory_manager.append_turn(session_id, "user", query)
                 self.memory_manager.append_turn(session_id, "assistant", answer)

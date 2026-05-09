@@ -1,14 +1,11 @@
 import os
 import torch
 from sentence_transformers import SentenceTransformer
-import google.genai
-from google.genai import types
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from src.storage.memory.cache import DocumentCache
-from config import generation_config as gen_config
 from src.utils.logger import setup_logging, log_request_middleware
 from src.utils.prompt_loader import load_prompt
 from src.utils.chunking_strategies import chunk_text as chunk_text_strategy
@@ -19,6 +16,9 @@ from src.ingestion import DocumentProcessor
 from src.query_processor import ProcessQuery
 from src.api.routes import create_router
 from src.storage.memory.state_manager import RAGStateManager, ConversationMemoryManager
+from src.llm.gemini_client import GeminiClient
+from src.llm.openai_client import OpenAIClient
+from src.integrations.slack.bot import start_slack_bot
 
 logger = setup_logging()
 logger.info("=== COGITX-RAG SYSTEM STARTING ===\n")
@@ -70,11 +70,16 @@ document_cache = DocumentCache(cache_dir=CACHE_DIR, logger=logger)
 rag_state_manager = RAGStateManager(STATE_DIR, logger)
 conversation_memory = ConversationMemoryManager(CACHE_DIR, logger, window_size=6)
 
-# Gemini config
+# LLM config
 system_prompt = load_prompt("prompts/system_prompt.txt")
-gen_config['system_instruction'] = system_prompt
-generation_config = types.GenerateContentConfig(**gen_config)
-gemini_client = google.genai.Client(api_key=GEMINI_API_KEY)
+
+def build_llm_client():
+    provider = settings.llm.default_llm_provider
+    if provider == "openai":
+        return OpenAIClient()
+    return GeminiClient(api_key=GEMINI_API_KEY)
+
+llm_client = build_llm_client()
 
 def update_global_state(**kwargs):
     """Update global RAG state after indexing"""
@@ -114,8 +119,8 @@ def get_query_processor():
     if query_processor is None and search_methods is not None:
         query_processor = ProcessQuery(
             search_methods,
-            gemini_client,
-            generation_config,
+            llm_client,
+            generation_config=None,
             memory_manager=conversation_memory,
             system_prompt=system_prompt,
         )
@@ -151,6 +156,15 @@ app = FastAPI(title="CogitX-RAG API", description="Production-grade RAG system",
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(create_router(UPLOAD_DIR, document_cache, document_processor, lambda: search_methods, lambda: chunks, get_query_processor), prefix="/api/v1")
 app.middleware("http")(log_request_middleware)
+
+
+@app.on_event("startup")
+async def startup_slack_bot():
+    slack_enabled = os.getenv("SLACK_ENABLED", str(settings.slack.slack_enabled)).lower() in {"1", "true", "yes", "on"}
+    if slack_enabled:
+        logger.info("Slack enabled; starting Slack bot in background")
+        import asyncio
+        asyncio.create_task(start_slack_bot())
 
 if __name__ == "__main__":
     import uvicorn

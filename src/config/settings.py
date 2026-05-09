@@ -11,6 +11,7 @@ class LLMSettings(BaseSettings):
     openai_api_key: str = Field(default="", description="OpenAI API key")
     openai_model: str = Field(default="gpt-4-turbo-preview", description="OpenAI model")
     openai_embedding_model: str = Field(default="text-embedding-3-large")
+    openai_base_url: str = Field(default="", description="OpenAI-compatible base URL")
 
     gemini_api_key: str = Field(default="", description="Google Gemini API key")
     gemini_model: str = Field(default="gemini-2.5-flash", description="Gemini model")
