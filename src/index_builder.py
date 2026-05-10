@@ -80,9 +80,9 @@ def build_indices(
     # Update global state via callback
     update_globals_fn(
         chunks=chunks,
-        bge_embeddings=combined_embeddings,
-        all_mini_embeddings=combined_embeddings,
-        combined_embeddings=combined_embeddings,
+        local_embedding_1_vectors=combined_embeddings,
+        local_embedding_2_vectors=combined_embeddings,
+        indexed_vectors=combined_embeddings,
         faiss_index=faiss_index,
         bm25=bm25,
         search_methods=search_methods

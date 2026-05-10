@@ -138,8 +138,8 @@ class ProcessQuery:
                 top_score = max(result.combined_score for result in search_results)
                 confidence = min(1.0, round(top_score * 5, 3))
             if self.memory_manager and session_id:
-                self.memory_manager.append_turn(session_id, "user", query)
-                self.memory_manager.append_turn(session_id, "assistant", answer)
+                await self.memory_manager.append_turn(session_id, "user", query)
+                await self.memory_manager.append_turn(session_id, "assistant", answer)
             logger.info(f"Generated answer")
             return SimpleNamespace(
                 answer=answer,

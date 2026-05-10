@@ -80,9 +80,9 @@ embedding_provider = build_embedding_provider()
 faiss_index = None
 bm25 = None
 chunks = []
-bge_embeddings = None
-all_mini_embeddings = None
-combined_embeddings = None
+local_embedding_1_vectors = None
+local_embedding_2_vectors = None
+indexed_vectors = None
 search_methods = None
 query_processor = None
 
@@ -115,12 +115,12 @@ if settings.vector_store.vector_store_type == "pinecone":
 
 def update_global_state(**kwargs):
     """Update global RAG state after indexing"""
-    global chunks, bge_embeddings, all_mini_embeddings, combined_embeddings
+    global chunks, local_embedding_1_vectors, local_embedding_2_vectors, indexed_vectors
     global faiss_index, bm25, search_methods
     chunks = kwargs['chunks']
-    bge_embeddings = kwargs['bge_embeddings']
-    all_mini_embeddings = kwargs['all_mini_embeddings']
-    combined_embeddings = kwargs['combined_embeddings']
+    local_embedding_1_vectors = kwargs['local_embedding_1_vectors']
+    local_embedding_2_vectors = kwargs['local_embedding_2_vectors']
+    indexed_vectors = kwargs['indexed_vectors']
     faiss_index = kwargs['faiss_index']
     bm25 = kwargs['bm25']
     search_methods = kwargs['search_methods']
@@ -138,9 +138,9 @@ def build_indices(input_chunks):
             faiss_index=faiss_index,
             bm25=bm25,
             chunks=chunks,
-            bge_embeddings=bge_embeddings,
-            all_mini_embeddings=all_mini_embeddings,
-            combined_embeddings=combined_embeddings,
+            bge_embeddings=local_embedding_1_vectors,
+            all_mini_embeddings=local_embedding_2_vectors,
+            combined_embeddings=indexed_vectors,
         )
     return search_state
 
@@ -213,9 +213,9 @@ if loaded_state:
     faiss_index = loaded_state["faiss_index"]
     bm25 = loaded_state["bm25"]
     chunks = loaded_state["chunks"]
-    bge_embeddings = loaded_state["bge_embeddings"]
-    all_mini_embeddings = loaded_state["all_mini_embeddings"]
-    combined_embeddings = loaded_state["combined_embeddings"]
+    local_embedding_1_vectors = loaded_state["bge_embeddings"]
+    local_embedding_2_vectors = loaded_state["all_mini_embeddings"]
+    indexed_vectors = loaded_state["combined_embeddings"]
     search_methods = SearchMethods(
         faiss_index=faiss_index,
         bm25=bm25,

@@ -122,7 +122,7 @@ class ConversationMemoryManager:
                 parts.append(f"{turn['role']}: {turn['content']}")
         return "\n\n".join(parts)
 
-    def append_turn(self, session_id: str, role: str, content: str) -> str:
+    async def append_turn(self, session_id: str, role: str, content: str) -> str:
         state = self._load_state(session_id)
         turns = state.get("turns", [])
         turns.append({"role": role, "content": content})
@@ -135,7 +135,7 @@ class ConversationMemoryManager:
             turns = turns[-self.window_size :]
 
         if len(overflow_buffer) >= self.overflow_threshold:
-            summary = self._summarize_turns(summary, overflow_buffer)
+            summary = await self._summarize_turns(summary, overflow_buffer)
             overflow_buffer = []
 
         state["turns"] = turns
@@ -144,7 +144,7 @@ class ConversationMemoryManager:
         self._save_state(session_id, state)
         return self.get_context(session_id)
 
-    def _summarize_turns(self, existing_summary: str, turns: list[dict]) -> str:
+    async def _summarize_turns(self, existing_summary: str, turns: list[dict]) -> str:
         transcript = "\n".join(f"{turn['role']}: {turn['content']}" for turn in turns)
         if self.llm_client is None:
             snippets = []
@@ -161,11 +161,7 @@ class ConversationMemoryManager:
             f"Turns to summarize:\n{transcript}"
         )
         try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return f"{existing_summary}\n{transcript[:800]}".strip()
-            summary = loop.run_until_complete(self.llm_client.generate(prompt=prompt, temperature=0.2, max_tokens=200))
+            summary = await self.llm_client.generate(prompt=prompt, temperature=0.2, max_tokens=200)
             return summary.strip()
         except Exception as e:
             self.logger.warning(f"Memory summarization failed, falling back to transcript compression: {e}")
