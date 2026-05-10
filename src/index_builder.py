@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 
 def build_indices(
     chunks,
-    embedding_generator,
-    bge_model,
-    all_mini_model,
+    embedding_provider,
     embedding_workers,
     update_globals_fn,
     vector_store=None,
@@ -29,10 +27,7 @@ def build_indices(
 
     Args:
         chunks: List of DocumentChunk objects
-        embedding_generator: HuggingFaceEmbeddings instance
-        bge_model: BGE embedding model
-        all_mini_model: All-MiniLM embedding model
-        embedding_workers: Number of parallel workers
+        embedding_provider: Selected embedding provider
         update_globals_fn: Callback to update global state
 
     Returns:
@@ -43,26 +38,8 @@ def build_indices(
     logger.info(f"Building indices for {len(chunks)} chunks with parallel embedding generation...")
     start_time = time.time()
 
-    # Parallel embedding generation for both models
-    with ThreadPoolExecutor(max_workers=embedding_workers) as executor:
-        bge_future = executor.submit(
-            embedding_generator.generate_bge_embeddings,
-            texts,
-            bge_model
-        )
-        all_mini_future = executor.submit(
-            embedding_generator.generate_all_mini_embeddings,
-            texts,
-            all_mini_model
-        )
-        bge_embeddings = bge_future.result()
-        all_mini_embeddings = all_mini_future.result()
-
-    # Concatenate embeddings (BGE + AllMiniLM: both 384-dim → 768-dim)
-    logger.info("Concatenating BGE and AllMiniLM embeddings...")
-    combined_embeddings = np.concatenate(
-        [bge_embeddings, all_mini_embeddings], axis=1
-    )
+    combined_embeddings = asyncio.run(embedding_provider.embed_batch(texts))
+    combined_embeddings = np.array(combined_embeddings, dtype=np.float32)
 
     # Store embeddings in chunks
     for i, chunk in enumerate(chunks):
@@ -96,18 +73,16 @@ def build_indices(
         faiss_index=faiss_index,
         bm25=bm25,
         chunks=chunks,
-        bge_model=bge_model,
-        all_mini_model=all_mini_model,
-        all_mini_embeddings=all_mini_embeddings,
-        vector_store=vector_store
+        embedding_provider=embedding_provider,
+        vector_store=vector_store,
     )
 
     # Update global state via callback
     update_globals_fn(
         chunks=chunks,
-        bge_embeddings=bge_embeddings,
-        all_mini_embeddings=all_mini_embeddings,
-        combined_embeddings=combined_embeddings,
+        local_embedding_1_vectors=combined_embeddings,
+        local_embedding_2_vectors=combined_embeddings,
+        indexed_vectors=combined_embeddings,
         faiss_index=faiss_index,
         bm25=bm25,
         search_methods=search_methods

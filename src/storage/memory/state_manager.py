@@ -75,10 +75,12 @@ class RAGStateManager:
 class ConversationMemoryManager:
     """Sliding-window conversation memory with rolling summaries."""
 
-    def __init__(self, cache_dir: str, logger, window_size: int = 6):
+    def __init__(self, cache_dir: str, logger, window_size: int = 6, overflow_threshold: int = 10, llm_client=None):
         self.cache_dir = cache_dir
         self.logger = logger
         self.window_size = window_size
+        self.overflow_threshold = overflow_threshold
+        self.llm_client = llm_client
         self.conversations_dir = os.path.join(cache_dir, "conversations")
         os.makedirs(self.conversations_dir, exist_ok=True)
 
@@ -88,9 +90,13 @@ class ConversationMemoryManager:
     def _load_state(self, session_id: str) -> dict:
         path = self._path(session_id)
         if not os.path.exists(path):
-            return {"turns": [], "summary": ""}
+            return {"turns": [], "summary": "", "overflow": []}
         with open(path, "rb") as f:
-            return pickle.load(f)
+            state = pickle.load(f)
+            state.setdefault("turns", [])
+            state.setdefault("summary", "")
+            state.setdefault("overflow", [])
+            return state
 
     def _save_state(self, session_id: str, state: dict) -> None:
         with open(self._path(session_id), "wb") as f:
@@ -105,36 +111,62 @@ class ConversationMemoryManager:
         parts = []
         if summary:
             parts.append(f"Conversation summary:\n{summary}")
+        overflow = state.get("overflow", [])
+        if overflow:
+            parts.append("Overflow buffer:")
+            for turn in overflow:
+                parts.append(f"{turn['role']}: {turn['content']}")
         if recent:
             parts.append("Recent turns:")
             for turn in recent:
                 parts.append(f"{turn['role']}: {turn['content']}")
         return "\n\n".join(parts)
 
-    def append_turn(self, session_id: str, role: str, content: str) -> str:
+    async def append_turn(self, session_id: str, role: str, content: str) -> str:
         state = self._load_state(session_id)
         turns = state.get("turns", [])
         turns.append({"role": role, "content": content})
 
         summary = state.get("summary", "")
-        overflow = max(0, len(turns) - self.window_size)
-        if overflow > 0:
-            old_turns = turns[:overflow]
-            summary = self._summarize_turns(summary, old_turns)
-            turns = turns[overflow:]
+        overflow_buffer = state.get("overflow", [])
+
+        if len(turns) > self.window_size:
+            overflow_buffer.extend(turns[:-self.window_size])
+            turns = turns[-self.window_size :]
+
+        if len(overflow_buffer) >= self.overflow_threshold:
+            summary = await self._summarize_turns(summary, overflow_buffer)
+            overflow_buffer = []
 
         state["turns"] = turns
         state["summary"] = summary
+        state["overflow"] = overflow_buffer
         self._save_state(session_id, state)
         return self.get_context(session_id)
 
-    def _summarize_turns(self, existing_summary: str, turns: list[dict]) -> str:
-        snippets = []
-        if existing_summary:
-            snippets.append(existing_summary.strip())
-        for turn in turns:
-            snippets.append(f"{turn['role']}: {turn['content'][:200]}")
-        combined = " | ".join(snippets)
-        if len(combined) > 1200:
-            combined = combined[:1200].rsplit(" ", 1)[0]
-        return combined
+    async def _summarize_turns(self, existing_summary: str, turns: list[dict]) -> str:
+        transcript = "\n".join(f"{turn['role']}: {turn['content']}" for turn in turns)
+        if self.llm_client is None:
+            snippets = []
+            if existing_summary:
+                snippets.append(existing_summary.strip())
+            snippets.append(transcript[:1200])
+            return " | ".join(snippets)
+
+        prompt = (
+            "Summarize the following conversation turns into a compact long-term memory. "
+            "Keep concrete entities, user goals, constraints, tools, and decisions. "
+            "Return plain text only.\n\n"
+            f"Existing summary:\n{existing_summary or 'None'}\n\n"
+            f"Turns to summarize:\n{transcript}"
+        )
+        try:
+            summary = await self.llm_client.generate(prompt=prompt, temperature=0.2, max_tokens=200)
+            return summary.strip()
+        except Exception as e:
+            self.logger.warning(f"Memory summarization failed, falling back to transcript compression: {e}")
+            snippets = []
+            if existing_summary:
+                snippets.append(existing_summary.strip())
+            snippets.append(transcript[:1200])
+            return " | ".join(snippets)

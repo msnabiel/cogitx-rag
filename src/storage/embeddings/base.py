@@ -72,3 +72,6 @@ class BaseEmbedding(ABC):
             True if dimension matches expected dimension
         """
         return len(embedding) == self.dimension
+
+    async def embed_query(self, query: str) -> List[float]:
+        return await self.embed_text(query)

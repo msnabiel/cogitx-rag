@@ -12,7 +12,10 @@ from src.utils.logger import setup_logging, log_request_middleware
 from src.utils.prompt_loader import load_prompt
 from src.utils.chunking_strategies import chunk_text as chunk_text_strategy
 from src.config.settings import settings
-from src.storage.embeddings.huggingface_embeddings import HuggingFaceEmbeddings
+from src.storage.embeddings.local_embeddings import LocalEmbedding
+from src.storage.embeddings.local_embeddings import LocalDualEmbedding
+from src.storage.embeddings.openai_embeddings import OpenAIEmbedding
+from src.storage.embeddings.gemini_embeddings import GeminiEmbedding
 from src.index_builder import build_indices as build_indices_fn
 from src.ingestion import DocumentProcessor
 from src.query_processor import ProcessQuery
@@ -47,41 +50,45 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(STATE_DIR, exist_ok=True)
 
-# Processing config
-EMBEDDING_BATCH_SIZE = settings.processing.embedding_batch_size_gpu if DEVICE == "cuda" else settings.processing.embedding_batch_size_cpu
-EMBEDDING_WORKERS = settings.processing.embedding_workers_gpu if DEVICE == "cuda" else settings.processing.embedding_workers_cpu
+def build_embedding_provider():
+    provider = settings.embeddings.embedding_provider
+    if provider == "openai":
+        return OpenAIEmbedding(
+            model_name=settings.embeddings.openai_embedding_model,
+            dimension=settings.vector_store.pinecone_dimension if settings.vector_store.vector_store_type == "pinecone" else settings.vector_store.faiss_dimension,
+        )
+    if provider == "gemini":
+        return GeminiEmbedding(
+            model_name=settings.embeddings.gemini_embedding_model,
+            dimension=settings.vector_store.pinecone_dimension if settings.vector_store.vector_store_type == "pinecone" else settings.vector_store.faiss_dimension,
+        )
+    if provider == "local_single":
+        return LocalEmbedding(
+            model_name=settings.embeddings.local_embedding_model_1,
+            dimension=settings.embeddings.local_dimension,
+            device=DEVICE,
+        )
+    return LocalDualEmbedding(
+        bge_model_name=settings.embeddings.local_embedding_model_1,
+        mini_model_name=settings.embeddings.local_embedding_model_2,
+        device=DEVICE,
+    )
 
-# Initialize models
-bge_model = SentenceTransformer('BAAI/bge-small-en-v1.5')
-all_mini_model = SentenceTransformer('all-MiniLM-L6-v2')
-if DEVICE == "cuda":
-    bge_model = bge_model.to(DEVICE)
-    all_mini_model = all_mini_model.to(DEVICE)
-
-embedding_generator = HuggingFaceEmbeddings(batch_size=EMBEDDING_BATCH_SIZE, device=DEVICE)
+embedding_provider = build_embedding_provider()
 
 # Global state - RAG indices and chunks
 faiss_index = None
 bm25 = None
 chunks = []
-bge_embeddings = None
-all_mini_embeddings = None
-combined_embeddings = None
+local_embedding_1_vectors = None
+local_embedding_2_vectors = None
+indexed_vectors = None
 search_methods = None
 query_processor = None
 
 # Cache
 document_cache = DocumentCache(cache_dir=CACHE_DIR, logger=logger)
 rag_state_manager = RAGStateManager(STATE_DIR, logger)
-conversation_memory = ConversationMemoryManager(
-    CACHE_DIR,
-    logger,
-    window_size=settings.memory.conversation_window_size,
-)
-
-pinecone_store = None
-if settings.vector_store.vector_store_type == "pinecone":
-    pinecone_store = PineconeVectorStore()
 
 # LLM config
 system_prompt = load_prompt("prompts/system_prompt.txt")
@@ -94,14 +101,26 @@ def build_llm_client():
 
 llm_client = build_llm_client()
 
+conversation_memory = ConversationMemoryManager(
+    CACHE_DIR,
+    logger,
+    window_size=settings.memory.conversation_window_size,
+    overflow_threshold=settings.memory.overflow_summary_threshold,
+    llm_client=llm_client,
+)
+
+pinecone_store = None
+if settings.vector_store.vector_store_type == "pinecone":
+    pinecone_store = PineconeVectorStore(dimension=embedding_provider.dimension)
+
 def update_global_state(**kwargs):
     """Update global RAG state after indexing"""
-    global chunks, bge_embeddings, all_mini_embeddings, combined_embeddings
+    global chunks, local_embedding_1_vectors, local_embedding_2_vectors, indexed_vectors
     global faiss_index, bm25, search_methods
     chunks = kwargs['chunks']
-    bge_embeddings = kwargs['bge_embeddings']
-    all_mini_embeddings = kwargs['all_mini_embeddings']
-    combined_embeddings = kwargs['combined_embeddings']
+    local_embedding_1_vectors = kwargs['local_embedding_1_vectors']
+    local_embedding_2_vectors = kwargs['local_embedding_2_vectors']
+    indexed_vectors = kwargs['indexed_vectors']
     faiss_index = kwargs['faiss_index']
     bm25 = kwargs['bm25']
     search_methods = kwargs['search_methods']
@@ -110,10 +129,7 @@ def build_indices(input_chunks):
     """Build FAISS + BM25 indices"""
     search_state = build_indices_fn(
         chunks=input_chunks,
-        embedding_generator=embedding_generator,
-        bge_model=bge_model,
-        all_mini_model=all_mini_model,
-        embedding_workers=EMBEDDING_WORKERS,
+        embedding_provider=embedding_provider,
         update_globals_fn=update_global_state,
         vector_store=pinecone_store,
     )
@@ -122,9 +138,9 @@ def build_indices(input_chunks):
             faiss_index=faiss_index,
             bm25=bm25,
             chunks=chunks,
-            bge_embeddings=bge_embeddings,
-            all_mini_embeddings=all_mini_embeddings,
-            combined_embeddings=combined_embeddings,
+            bge_embeddings=local_embedding_1_vectors,
+            all_mini_embeddings=local_embedding_2_vectors,
+            combined_embeddings=indexed_vectors,
         )
     return search_state
 
@@ -197,16 +213,14 @@ if loaded_state:
     faiss_index = loaded_state["faiss_index"]
     bm25 = loaded_state["bm25"]
     chunks = loaded_state["chunks"]
-    bge_embeddings = loaded_state["bge_embeddings"]
-    all_mini_embeddings = loaded_state["all_mini_embeddings"]
-    combined_embeddings = loaded_state["combined_embeddings"]
+    local_embedding_1_vectors = loaded_state["bge_embeddings"]
+    local_embedding_2_vectors = loaded_state["all_mini_embeddings"]
+    indexed_vectors = loaded_state["combined_embeddings"]
     search_methods = SearchMethods(
         faiss_index=faiss_index,
         bm25=bm25,
         chunks=chunks,
-        bge_model=bge_model,
-        all_mini_model=all_mini_model,
-        all_mini_embeddings=all_mini_embeddings,
+        embedding_provider=embedding_provider,
         vector_store=pinecone_store,
     )
 

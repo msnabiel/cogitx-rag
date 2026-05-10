@@ -3,9 +3,9 @@
 from typing import List
 from openai import AsyncOpenAI
 from loguru import logger
-from embeddings.base import BaseEmbedding
-from core.exceptions import EmbeddingError
-from config.settings import settings
+from src.storage.embeddings.base import BaseEmbedding
+from src.core.types_and_exception import EmbeddingError
+from src.config.settings import settings
 
 
 class OpenAIEmbedding(BaseEmbedding):
@@ -94,3 +94,8 @@ class OpenAIEmbedding(BaseEmbedding):
         except Exception as e:
             logger.error(f"OpenAI batch embedding error: {e}")
             raise EmbeddingError(f"Failed to generate batch embeddings: {str(e)}")
+
+    async def embed(self, text):
+        if isinstance(text, str):
+            return await self.embed_text(text)
+        return await self.embed_batch(text)

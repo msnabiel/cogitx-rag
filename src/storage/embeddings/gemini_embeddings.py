@@ -3,9 +3,9 @@
 from typing import List
 import google.generativeai as genai
 from loguru import logger
-from embeddings.base import BaseEmbedding
-from core.exceptions import EmbeddingError
-from config.settings import settings
+from src.storage.embeddings.base import BaseEmbedding
+from src.core.types_and_exception import EmbeddingError
+from src.config.settings import settings
 
 
 class GeminiEmbedding(BaseEmbedding):
@@ -125,3 +125,8 @@ class GeminiEmbedding(BaseEmbedding):
         except Exception as e:
             logger.error(f"Gemini query embedding error: {e}")
             raise EmbeddingError(f"Failed to generate query embedding: {str(e)}")
+
+    async def embed(self, text):
+        if isinstance(text, str):
+            return await self.embed_query(text)
+        return await self.embed_batch(text)
