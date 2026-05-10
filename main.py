@@ -13,6 +13,10 @@ from src.utils.prompt_loader import load_prompt
 from src.utils.chunking_strategies import chunk_text as chunk_text_strategy
 from src.config.settings import settings
 from src.storage.embeddings.huggingface_embeddings import HuggingFaceEmbeddings
+from src.storage.embeddings.local_embeddings import LocalEmbedding
+from src.storage.embeddings.local_embeddings import LocalDualEmbedding
+from src.storage.embeddings.openai_embeddings import OpenAIEmbedding
+from src.storage.embeddings.gemini_embeddings import GeminiEmbedding
 from src.index_builder import build_indices as build_indices_fn
 from src.ingestion import DocumentProcessor
 from src.query_processor import ProcessQuery
@@ -51,14 +55,31 @@ os.makedirs(STATE_DIR, exist_ok=True)
 EMBEDDING_BATCH_SIZE = settings.processing.embedding_batch_size_gpu if DEVICE == "cuda" else settings.processing.embedding_batch_size_cpu
 EMBEDDING_WORKERS = settings.processing.embedding_workers_gpu if DEVICE == "cuda" else settings.processing.embedding_workers_cpu
 
-# Initialize models
-bge_model = SentenceTransformer('BAAI/bge-small-en-v1.5')
-all_mini_model = SentenceTransformer('all-MiniLM-L6-v2')
-if DEVICE == "cuda":
-    bge_model = bge_model.to(DEVICE)
-    all_mini_model = all_mini_model.to(DEVICE)
+def build_embedding_provider():
+    provider = settings.embeddings.embedding_provider
+    if provider == "openai":
+        return OpenAIEmbedding(
+            model_name=settings.embeddings.openai_embedding_model,
+            dimension=settings.vector_store.pinecone_dimension if settings.vector_store.vector_store_type == "pinecone" else settings.vector_store.faiss_dimension,
+        )
+    if provider == "gemini":
+        return GeminiEmbedding(
+            model_name=settings.embeddings.gemini_embedding_model,
+            dimension=settings.vector_store.pinecone_dimension if settings.vector_store.vector_store_type == "pinecone" else settings.vector_store.faiss_dimension,
+        )
+    if provider == "local_single":
+        return LocalEmbedding(
+            model_name=settings.embeddings.local_embedding_model_1,
+            dimension=settings.embeddings.local_dimension,
+            device=DEVICE,
+        )
+    return LocalDualEmbedding(
+        bge_model_name=settings.embeddings.local_embedding_model_1,
+        mini_model_name=settings.embeddings.local_embedding_model_2,
+        device=DEVICE,
+    )
 
-embedding_generator = HuggingFaceEmbeddings(batch_size=EMBEDDING_BATCH_SIZE, device=DEVICE)
+embedding_provider = build_embedding_provider()
 
 # Global state - RAG indices and chunks
 faiss_index = None
@@ -73,15 +94,6 @@ query_processor = None
 # Cache
 document_cache = DocumentCache(cache_dir=CACHE_DIR, logger=logger)
 rag_state_manager = RAGStateManager(STATE_DIR, logger)
-conversation_memory = ConversationMemoryManager(
-    CACHE_DIR,
-    logger,
-    window_size=settings.memory.conversation_window_size,
-)
-
-pinecone_store = None
-if settings.vector_store.vector_store_type == "pinecone":
-    pinecone_store = PineconeVectorStore()
 
 # LLM config
 system_prompt = load_prompt("prompts/system_prompt.txt")
@@ -93,6 +105,18 @@ def build_llm_client():
     return GeminiClient(api_key=GEMINI_API_KEY)
 
 llm_client = build_llm_client()
+
+conversation_memory = ConversationMemoryManager(
+    CACHE_DIR,
+    logger,
+    window_size=settings.memory.conversation_window_size,
+    overflow_threshold=settings.memory.overflow_summary_threshold,
+    llm_client=llm_client,
+)
+
+pinecone_store = None
+if settings.vector_store.vector_store_type == "pinecone":
+    pinecone_store = PineconeVectorStore(dimension=embedding_provider.dimension)
 
 def update_global_state(**kwargs):
     """Update global RAG state after indexing"""
@@ -110,10 +134,7 @@ def build_indices(input_chunks):
     """Build FAISS + BM25 indices"""
     search_state = build_indices_fn(
         chunks=input_chunks,
-        embedding_generator=embedding_generator,
-        bge_model=bge_model,
-        all_mini_model=all_mini_model,
-        embedding_workers=EMBEDDING_WORKERS,
+        embedding_provider=embedding_provider,
         update_globals_fn=update_global_state,
         vector_store=pinecone_store,
     )
@@ -204,9 +225,7 @@ if loaded_state:
         faiss_index=faiss_index,
         bm25=bm25,
         chunks=chunks,
-        bge_model=bge_model,
-        all_mini_model=all_mini_model,
-        all_mini_embeddings=all_mini_embeddings,
+        embedding_provider=embedding_provider,
         vector_store=pinecone_store,
     )
 

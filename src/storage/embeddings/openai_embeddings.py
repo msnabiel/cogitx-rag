@@ -94,3 +94,8 @@ class OpenAIEmbedding(BaseEmbedding):
         except Exception as e:
             logger.error(f"OpenAI batch embedding error: {e}")
             raise EmbeddingError(f"Failed to generate batch embeddings: {str(e)}")
+
+    async def embed(self, text):
+        if isinstance(text, str):
+            return await self.embed_text(text)
+        return await self.embed_batch(text)

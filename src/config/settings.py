@@ -24,6 +24,17 @@ class LLMSettings(BaseSettings):
     default_llm_provider: Literal["openai", "gemini"] = Field(default="gemini")
 
 
+class EmbeddingSettings(BaseSettings):
+    """Embedding provider configuration."""
+
+    embedding_provider: Literal["local_dual", "local_single", "openai", "gemini"] = Field(default="local_dual")
+    local_embedding_model_1: str = Field(default="BAAI/bge-small-en-v1.5")
+    local_embedding_model_2: str = Field(default="all-MiniLM-L6-v2")
+    openai_embedding_model: str = Field(default="text-embedding-3-large")
+    gemini_embedding_model: str = Field(default="models/embedding-001")
+    local_dimension: int = Field(default=384)
+
+
 class VectorStoreSettings(BaseSettings):
     """Vector store configuration."""
 
@@ -62,6 +73,7 @@ class MemorySettings(BaseSettings):
     enable_long_term_memory: bool = Field(default=True)
     enable_structured_memory: bool = Field(default=True)
     conversation_window_size: int = Field(default=6)
+    overflow_summary_threshold: int = Field(default=10)
 
 
 class ProcessingSettings(BaseSettings):
@@ -183,6 +195,7 @@ class Settings(BaseSettings):
     environment: Literal["development", "staging", "production"] = Field(default="development")
 
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    embeddings: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     vector_store: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
     graph: GraphSettings = Field(default_factory=GraphSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
@@ -215,6 +228,7 @@ def _load_env_overrides() -> Dict[str, Any]:
             "openai_api_key": values.get("OPENAI_API_KEY", ""),
             "gemini_api_key": values.get("GEMINI_API_KEY", ""),
         },
+        "embeddings": {},
         "vector_store": {
             "pinecone_api_key": values.get("PINECONE_API_KEY", ""),
         },
@@ -241,6 +255,7 @@ _env_overrides = _load_env_overrides()
 settings = Settings(**{
     **_yaml_settings,
     "llm": {**_yaml_settings.get("llm", {}), **_env_overrides["llm"]},
+    "embeddings": {**_yaml_settings.get("embeddings", {}), **_env_overrides["embeddings"]},
     "vector_store": {**_yaml_settings.get("vector_store", {}), **_env_overrides["vector_store"]},
     "graph": {**_yaml_settings.get("graph", {}), **_env_overrides["graph"]},
     "memory": {**_yaml_settings.get("memory", {}), **_env_overrides["memory"]},

@@ -123,7 +123,7 @@ def merge_chunks_search(results: List[SearchResult], min_overlap: int = 5) -> Li
 class SearchMethods:
     """Search methods for ensemble retrieval"""
 
-    def __init__(self, faiss_index, bm25, chunks, bge_model, all_mini_model, all_mini_embeddings, vector_store=None):
+    def __init__(self, faiss_index, bm25, chunks, embedding_provider=None, vector_store=None):
         """
         Initialize search methods
 
@@ -138,24 +138,20 @@ class SearchMethods:
         self.faiss_index = faiss_index
         self.bm25 = bm25
         self.chunks = chunks
-        self.bge_model = bge_model
-        self.all_mini_model = all_mini_model
-        self.all_mini_embeddings = all_mini_embeddings
+        self.embedding_provider = embedding_provider
         self.vector_store = vector_store
         self.chunk_lookup = {getattr(chunk, "chunk_id", None): chunk for chunk in chunks if getattr(chunk, "chunk_id", None)}
 
     async def semantic_search(self, query: str, top_k: int = 10, score_threshold: float = SEMANTIC_THRESHOLD_CHUNK_SCORE) -> List[SearchResult]:
         """Pure semantic search using FAISS (combined BGE + Intfloat)"""
-        # Generate both embeddings
-        embedding_bge = self.bge_model.encode([query], normalize_embeddings=True)
-        embedding_all_mini = self.all_mini_model.encode([query], normalize_embeddings=True)
-
-        # Concatenate to match the FAISS index format
-        query_embedding = np.concatenate([embedding_bge, embedding_all_mini], axis=1)
+        if self.embedding_provider is not None:
+            query_embedding = await self.embedding_provider.embed_query(query)
+        else:
+            raise HTTPException(status_code=500, detail="Embedding provider not configured")
 
         if self.vector_store is not None:
             results = await self.vector_store.search(
-                query_embedding=query_embedding[0].tolist(),
+                query_embedding=query_embedding,
                 top_k=min(top_k * 3, len(self.chunks)),
                 score_threshold=score_threshold,
             )
@@ -182,8 +178,10 @@ class SearchMethods:
             raise HTTPException(status_code=500, detail="FAISS index not built")
 
         # Search
+        query_vector = np.array([query_embedding], dtype=np.float32)
         scores, indices = self.faiss_index.search(
-            query_embedding.astype('float32'), min(top_k*3, len(self.chunks))
+            query_vector.astype('float32'),
+            min(top_k * 3, len(self.chunks)),
         )
 
         # Prepare results
@@ -232,7 +230,7 @@ class SearchMethods:
             raise HTTPException(status_code=500, detail="Indices not built")
 
         # Get results from different models
-        bge_results = await self.semantic_search(query, top_k * 3) # Semantic (BGE+AllMini) weight
+        bge_results = await self.semantic_search(query, top_k * 3) # Semantic weight
         bm25_results = self.lexical_search(query, top_k * 3)
 
         # Combine results using reciprocal rank fusion

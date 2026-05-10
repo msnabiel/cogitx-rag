@@ -125,3 +125,8 @@ class GeminiEmbedding(BaseEmbedding):
         except Exception as e:
             logger.error(f"Gemini query embedding error: {e}")
             raise EmbeddingError(f"Failed to generate query embedding: {str(e)}")
+
+    async def embed(self, text):
+        if isinstance(text, str):
+            return await self.embed_query(text)
+        return await self.embed_batch(text)
