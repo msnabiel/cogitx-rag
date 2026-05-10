@@ -23,6 +23,7 @@ from src.llm.gemini_client import GeminiClient
 from src.llm.openai_client import OpenAIClient
 from src.integrations.slack.bot import start_slack_bot
 from src.integrations.telegram.bot import start_telegram_bot
+from src.storage.vector_stores.pinecone_store import PineconeVectorStore
 
 logger = setup_logging()
 logger.info("=== COGITX-RAG SYSTEM STARTING ===\n")
@@ -78,6 +79,10 @@ conversation_memory = ConversationMemoryManager(
     window_size=settings.memory.conversation_window_size,
 )
 
+pinecone_store = None
+if settings.vector_store.vector_store_type == "pinecone":
+    pinecone_store = PineconeVectorStore()
+
 # LLM config
 system_prompt = load_prompt("prompts/system_prompt.txt")
 
@@ -109,16 +114,18 @@ def build_indices(input_chunks):
         bge_model=bge_model,
         all_mini_model=all_mini_model,
         embedding_workers=EMBEDDING_WORKERS,
-        update_globals_fn=update_global_state
+        update_globals_fn=update_global_state,
+        vector_store=pinecone_store,
     )
-    rag_state_manager.save(
-        faiss_index=faiss_index,
-        bm25=bm25,
-        chunks=chunks,
-        bge_embeddings=bge_embeddings,
-        all_mini_embeddings=all_mini_embeddings,
-        combined_embeddings=combined_embeddings,
-    )
+    if settings.vector_store.vector_store_type != "pinecone":
+        rag_state_manager.save(
+            faiss_index=faiss_index,
+            bm25=bm25,
+            chunks=chunks,
+            bge_embeddings=bge_embeddings,
+            all_mini_embeddings=all_mini_embeddings,
+            combined_embeddings=combined_embeddings,
+        )
     return search_state
 
 def get_query_processor():
@@ -200,6 +207,7 @@ if loaded_state:
         bge_model=bge_model,
         all_mini_model=all_mini_model,
         all_mini_embeddings=all_mini_embeddings,
+        vector_store=pinecone_store,
     )
 
 # FastAPI app

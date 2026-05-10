@@ -7,10 +7,10 @@ from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import faiss
 from loguru import logger
-from vector_stores.base import BaseVectorStore
-from core.types import Metadata
-from core.exceptions import VectorStoreError
-from config.settings import settings
+from .base import BaseVectorStore
+from ...core.types import Metadata
+from ...core.exceptions import VectorStoreError
+from ...config.settings import settings
 
 
 class FAISSVectorStore(BaseVectorStore):

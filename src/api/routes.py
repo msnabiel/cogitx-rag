@@ -90,7 +90,7 @@ def create_router(
             if not chunks:
                 raise HTTPException(status_code=400, detail="No documents indexed. Please ingest documents first.")
             search_methods = get_search_methods_fn()
-            results = search_methods.ensemble_search(request.query, request.top_k)
+            results = await search_methods.ensemble_search(request.query, request.top_k)
             result_chunks = [result.chunk for result in results]
             scores = [result.combined_score for result in results]
             formatted_results = []

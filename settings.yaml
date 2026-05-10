@@ -5,7 +5,7 @@ llm:
   openai_model: gpt-4-turbo-preview
   openai_embedding_model: text-embedding-3-large
   openai_base_url: ""
-  gemini_model: gemini-2.5-flash
+  gemini_model: gemini-3-flash-preview
   gemini_embedding_model: models/embedding-001
   default_llm_provider: gemini
 
@@ -13,7 +13,7 @@ vector_store:
   vector_store_type: faiss
   pinecone_environment: us-east-1
   pinecone_index_name: cogitx-rag
-  pinecone_dimension: 1536
+  pinecone_dimension: 384
   faiss_index_path: ./data/faiss_index
   faiss_dimension: 1536
 
@@ -32,7 +32,7 @@ memory:
   enable_short_term_memory: true
   enable_long_term_memory: true
   enable_structured_memory: true
-  conversation_window_size: 6
+  conversation_window_size: 2
 
 processing:
   max_workers: 10

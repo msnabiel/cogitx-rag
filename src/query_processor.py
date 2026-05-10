@@ -93,7 +93,7 @@ class ProcessQuery:
 
         try:
             # Retrieve chunks
-            search_results = self.search_methods.ensemble_search(query, top_k=16)
+            search_results = await self.search_methods.ensemble_search(query, top_k=16)
             relevant_chunks = [result.chunk for result in search_results]
 
             # Deduplicate

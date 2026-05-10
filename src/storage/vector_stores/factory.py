@@ -1,12 +1,12 @@
 """Factory for creating vector store instances."""
 
 from loguru import logger
-from vector_stores.base import BaseVectorStore
-from vector_stores.faiss_store import FAISSVectorStore
-from vector_stores.pinecone_store import PineconeVectorStore
-from core.types import VectorStoreType
-from core.exceptions import ConfigurationError
-from config.settings import settings
+from .base import BaseVectorStore
+from .faiss_store import FAISSVectorStore
+from .pinecone_store import PineconeVectorStore
+from ...core.types import VectorStoreType
+from ...core.exceptions import ConfigurationError
+from ...config.settings import settings
 
 
 class VectorStoreFactory:

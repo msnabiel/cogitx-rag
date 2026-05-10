@@ -3,10 +3,10 @@
 from typing import List, Dict, Any, Optional, Tuple
 from pinecone import Pinecone, ServerlessSpec
 from loguru import logger
-from vector_stores.base import BaseVectorStore
-from core.types import Metadata
-from core.exceptions import VectorStoreError
-from config.settings import settings
+from .base import BaseVectorStore
+from ...core.types import Metadata
+from ...core.exceptions import VectorStoreError
+from ...config.settings import settings
 
 
 class PineconeVectorStore(BaseVectorStore):
