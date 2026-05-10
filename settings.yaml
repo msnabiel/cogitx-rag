@@ -21,7 +21,7 @@ vector_store:
   vector_store_type: faiss
   pinecone_environment: us-east-1
   pinecone_index_name: cogitx-rag
-  pinecone_dimension: 768
+  pinecone_dimension: 384
   faiss_index_path: ./data/faiss_index
   faiss_dimension: 1536
 

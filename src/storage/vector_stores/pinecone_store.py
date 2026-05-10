@@ -4,8 +4,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pinecone import Pinecone, ServerlessSpec
 from loguru import logger
 from .base import BaseVectorStore
-from ...core.types import Metadata
-from ...core.exceptions import VectorStoreError
+from ...core.types_and_exception import Metadata, VectorStoreError
 from ...config.settings import settings
 
 

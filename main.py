@@ -12,7 +12,6 @@ from src.utils.logger import setup_logging, log_request_middleware
 from src.utils.prompt_loader import load_prompt
 from src.utils.chunking_strategies import chunk_text as chunk_text_strategy
 from src.config.settings import settings
-from src.storage.embeddings.huggingface_embeddings import HuggingFaceEmbeddings
 from src.storage.embeddings.local_embeddings import LocalEmbedding
 from src.storage.embeddings.local_embeddings import LocalDualEmbedding
 from src.storage.embeddings.openai_embeddings import OpenAIEmbedding
@@ -50,10 +49,6 @@ STATE_DIR = os.getenv("RAG_STATE_DIR", "./data/rag_state")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(STATE_DIR, exist_ok=True)
-
-# Processing config
-EMBEDDING_BATCH_SIZE = settings.processing.embedding_batch_size_gpu if DEVICE == "cuda" else settings.processing.embedding_batch_size_cpu
-EMBEDDING_WORKERS = settings.processing.embedding_workers_gpu if DEVICE == "cuda" else settings.processing.embedding_workers_cpu
 
 def build_embedding_provider():
     provider = settings.embeddings.embedding_provider

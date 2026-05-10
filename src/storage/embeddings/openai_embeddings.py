@@ -3,9 +3,9 @@
 from typing import List
 from openai import AsyncOpenAI
 from loguru import logger
-from embeddings.base import BaseEmbedding
-from core.exceptions import EmbeddingError
-from config.settings import settings
+from src.storage.embeddings.base import BaseEmbedding
+from src.core.types_and_exception import EmbeddingError
+from src.config.settings import settings
 
 
 class OpenAIEmbedding(BaseEmbedding):

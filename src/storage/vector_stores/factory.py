@@ -4,8 +4,7 @@ from loguru import logger
 from .base import BaseVectorStore
 from .faiss_store import FAISSVectorStore
 from .pinecone_store import PineconeVectorStore
-from ...core.types import VectorStoreType
-from ...core.exceptions import ConfigurationError
+from ...core.types_and_exception import VectorStoreType, ConfigurationError
 from ...config.settings import settings
 
 
