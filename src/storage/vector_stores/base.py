@@ -2,8 +2,8 @@
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
-from core.models import DocumentChunk, RetrievalResult
-from core.types import Metadata
+from ...core.models import DocumentChunk, RetrievalResult
+from ...core.types import Metadata
 
 
 class BaseVectorStore(ABC):

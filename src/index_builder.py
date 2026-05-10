@@ -4,6 +4,7 @@ import time
 import logging
 from typing import List
 from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 import numpy as np
 import faiss
@@ -20,7 +21,8 @@ def build_indices(
     bge_model,
     all_mini_model,
     embedding_workers,
-    update_globals_fn
+    update_globals_fn,
+    vector_store=None,
 ):
     """
     Build FAISS and BM25 indices with parallel embedding generation
@@ -79,13 +81,25 @@ def build_indices(
     bm25 = BM25Okapi(tokenized_texts)
 
     # Initialize search methods
+    if vector_store is not None:
+        logger.info("Upserting chunks into Pinecone vector store...")
+        ids = [chunk.chunk_id for chunk in chunks]
+        metadata = []
+        for chunk in chunks:
+            chunk_meta = dict(getattr(chunk, "metadata", {}) or {})
+            chunk_meta["content"] = chunk.text
+            chunk_meta["chunk_id"] = chunk.chunk_id
+            metadata.append(chunk_meta)
+        asyncio.run(vector_store.upsert(ids=ids, embeddings=combined_embeddings.tolist(), metadata=metadata))
+
     search_methods = SearchMethods(
         faiss_index=faiss_index,
         bm25=bm25,
         chunks=chunks,
         bge_model=bge_model,
         all_mini_model=all_mini_model,
-        all_mini_embeddings=all_mini_embeddings
+        all_mini_embeddings=all_mini_embeddings,
+        vector_store=vector_store
     )
 
     # Update global state via callback

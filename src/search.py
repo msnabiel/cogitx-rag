@@ -123,7 +123,7 @@ def merge_chunks_search(results: List[SearchResult], min_overlap: int = 5) -> Li
 class SearchMethods:
     """Search methods for ensemble retrieval"""
 
-    def __init__(self, faiss_index, bm25, chunks, bge_model, all_mini_model, all_mini_embeddings):
+    def __init__(self, faiss_index, bm25, chunks, bge_model, all_mini_model, all_mini_embeddings, vector_store=None):
         """
         Initialize search methods
 
@@ -141,18 +141,45 @@ class SearchMethods:
         self.bge_model = bge_model
         self.all_mini_model = all_mini_model
         self.all_mini_embeddings = all_mini_embeddings
+        self.vector_store = vector_store
+        self.chunk_lookup = {getattr(chunk, "chunk_id", None): chunk for chunk in chunks if getattr(chunk, "chunk_id", None)}
 
-    def semantic_search(self, query: str, top_k: int = 10, score_threshold: float = SEMANTIC_THRESHOLD_CHUNK_SCORE) -> List[SearchResult]:
+    async def semantic_search(self, query: str, top_k: int = 10, score_threshold: float = SEMANTIC_THRESHOLD_CHUNK_SCORE) -> List[SearchResult]:
         """Pure semantic search using FAISS (combined BGE + Intfloat)"""
-        if not self.faiss_index:
-            raise HTTPException(status_code=500, detail="FAISS index not built")
-
         # Generate both embeddings
         embedding_bge = self.bge_model.encode([query], normalize_embeddings=True)
         embedding_all_mini = self.all_mini_model.encode([query], normalize_embeddings=True)
 
         # Concatenate to match the FAISS index format
         query_embedding = np.concatenate([embedding_bge, embedding_all_mini], axis=1)
+
+        if self.vector_store is not None:
+            results = await self.vector_store.search(
+                query_embedding=query_embedding[0].tolist(),
+                top_k=min(top_k * 3, len(self.chunks)),
+                score_threshold=score_threshold,
+            )
+
+            search_results = []
+            for external_id, score, metadata in results:
+                chunk = self.chunk_lookup.get(external_id)
+                if chunk is None:
+                    chunk = DocumentChunk(
+                        text=metadata.get("content", ""),
+                        metadata=metadata or {},
+                    )
+                    chunk.chunk_id = external_id
+                search_results.append(
+                    SearchResult(
+                        chunk=chunk,
+                        semantic_score=float(score),
+                        search_strategy="semantic",
+                    )
+                )
+            return search_results
+
+        if not self.faiss_index:
+            raise HTTPException(status_code=500, detail="FAISS index not built")
 
         # Search
         scores, indices = self.faiss_index.search(
@@ -198,14 +225,14 @@ class SearchMethods:
 
         return results
 
-    def ensemble_search(self, query: str, top_k: int = 10, score_threshold: float = ENSEMBLE_THRESHOLD_SCORE) -> List[SearchResult]:
+    async def ensemble_search(self, query: str, top_k: int = 10, score_threshold: float = ENSEMBLE_THRESHOLD_SCORE) -> List[SearchResult]:
         """Ensemble search using multiple embedding models"""
         start_time = time.time()
-        if not self.faiss_index or not self.bm25:
+        if (self.faiss_index is None and self.vector_store is None) or not self.bm25:
             raise HTTPException(status_code=500, detail="Indices not built")
 
         # Get results from different models
-        bge_results = self.semantic_search(query, top_k * 3) # Semantic (BGE+AllMini) weight
+        bge_results = await self.semantic_search(query, top_k * 3) # Semantic (BGE+AllMini) weight
         bm25_results = self.lexical_search(query, top_k * 3)
 
         # Combine results using reciprocal rank fusion
