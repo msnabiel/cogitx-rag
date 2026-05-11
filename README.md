@@ -2,10 +2,13 @@
 
 FastAPI-based RAG system with document ingestion, conversational memory, Slack/Telegram integrations, configurable embeddings, and pluggable vector stores.
 
----
 ## Architecture
 
-![CogitX-RAG Architecture](images/architecture.png)
+![CogitX-RAG Architecture](assets/architecture.png)
+
+## Demo
+
+[![Watch Demo](/assets/thumbnail1.png)](https://drive.google.com/file/d/1EjqoRS3pI4mJeXKQSxurDXGZ_lO1P3Bl/view?usp=sharing)
 
 ## System Overview
 
