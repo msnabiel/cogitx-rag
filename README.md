@@ -114,15 +114,3 @@ Combined vector size in `local_dual` mode: **768**
 | POST | `/api/v1/search` | Semantic search |
 
 
-## Running Locally
-
-```bash
-python3 main.py
-```
-
-Development reload is enabled when:
-
-```text
-environment != production
-```
-
