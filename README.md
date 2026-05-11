@@ -14,7 +14,7 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 
 ## memory
 
-![CogitX-RAG Architecture](assets/architecture.png)
+![CogitX-RAG Architecture](assets/memory.png)
 
 ## Features
 
@@ -29,13 +29,12 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 | OCR support | ✅ | Tesseract + LibreOffice integration |
 | Multiple embedding modes | ✅ | Local, OpenAI, Gemini |
 | Multiple vector stores | ✅ | FAISS + Pinecone support |
-| Telegram bot | ⚠️ | Present but lightly tested |
-| Citations | ⚠️ | PDF metadata extraction can be noisy |
+| Telegram bot | ⚠️ | Present but not tested |
+| Citations | ⚠️ | line numbering can be noisy sometimes |
 | Graph retrieval | 🚧 | Modules exist, runtime integration pending |
 | Semantic memory | 🚧 | Runtime wiring incomplete |
 | Structured memory | 🚧 | Runtime wiring incomplete |
 
----
 
 ## Embedding Modes
 
@@ -55,7 +54,6 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 
 Combined vector size in `local_dual` mode: **768**
 
----
 
 ## Memory System
 
@@ -66,13 +64,6 @@ Combined vector size in `local_dual` mode: **768**
 | Summarization | Uses LLM to summarize overflow |
 | Prompt assembly | Injects summary + recent history |
 
-Active runtime path:
-
-```text
-src/storage/memory/state_manager.py
-```
-
----
 
 ## Configuration
 
@@ -94,7 +85,6 @@ src/storage/memory/state_manager.py
 | `slack.slack_enabled` | Slack startup toggle |
 | `telegram.telegram_enabled` | Telegram startup toggle |
 
----
 
 ## API Endpoints
 
@@ -106,16 +96,6 @@ src/storage/memory/state_manager.py
 | POST | `/api/v1/query` | Query RAG pipeline |
 | POST | `/api/v1/search` | Semantic search |
 
-### Query Response
-
-```json
-{
-  "answer": "...",
-  "confidence": 0.0
-}
-```
-
----
 
 ## Running Locally
 
@@ -129,21 +109,3 @@ Development reload is enabled when:
 environment != production
 ```
 
----
-
-## Project Structure
-
-```text
-src/
-├── api/
-├── bots/
-├── config/
-├── ingestion/
-├── query/
-├── storage/
-│   ├── embeddings/
-│   ├── memory/
-│   └── vectorstores/
-├── utils/
-└── prompts/
-```
