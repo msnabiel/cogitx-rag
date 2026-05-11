@@ -12,36 +12,28 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 
 [![Watch Demo](./assets/thumbnail1.png)](https://drive.google.com/file/d/1EjqoRS3pI4mJeXKQSxurDXGZ_lO1P3Bl/view?usp=sharing)
 
-## System Overview
+## memory
 
-| Component | Details |
-|---|---|
-| Backend | FastAPI |
-| Retrieval | Chunk-based semantic retrieval |
-| Embeddings | Local, OpenAI, Gemini |
-| Vector Stores | FAISS, Pinecone |
-| Memory | Recent window + overflow summarization |
-| Bots | Slack, Telegram |
-| OCR Support | Tesseract + LibreOffice |
-| Runtime | Uvicorn |
-
----
+![CogitX-RAG Architecture](assets/architecture.png)
 
 ## Features
 
 | Feature | Status | Notes |
 |---|---|---|
-| Document upload | Working | API upload + ingestion pipeline |
-| Chunking & embeddings | Working | Configurable embedding providers |
-| Retrieval & generation | Working | Retrieval + LLM response flow |
-| Confidence scoring | Working | Returned in query response |
-| Slack bot | Working | Thread-based session memory |
-| Telegram bot | Partial | Present but lightly tested |
-| Session memory | Working | Window + summarization |
-| Pinecone support | Partial | Requires validation |
-| Graph retrieval | Pending | Modules exist, not integrated |
-| Semantic memory | Pending | Runtime wiring incomplete |
-| Structured memory | Pending | Runtime wiring incomplete |
+| Document upload & ingestion | ✅ | API upload + ingestion pipeline |
+| Chunking & embeddings | ✅ | Configurable embedding providers |
+| Retrieval & generation | ✅ | Retrieval + LLM response flow |
+| Confidence scoring | ✅ | Returned in query response |
+| Slack bot | ✅ | Thread-based conversational memory |
+| Session memory | ✅ | Window + overflow summarization |
+| OCR support | ✅ | Tesseract + LibreOffice integration |
+| Multiple embedding modes | ✅ | Local, OpenAI, Gemini |
+| Multiple vector stores | ✅ | FAISS + Pinecone support |
+| Telegram bot | ⚠️ | Present but lightly tested |
+| Citations | ⚠️ | PDF metadata extraction can be noisy |
+| Graph retrieval | 🚧 | Modules exist, runtime integration pending |
+| Semantic memory | 🚧 | Runtime wiring incomplete |
+| Structured memory | 🚧 | Runtime wiring incomplete |
 
 ---
 
@@ -104,15 +96,6 @@ src/storage/memory/state_manager.py
 
 ---
 
-## Prompt Files
-
-| File | Purpose |
-|---|---|
-| `prompts/system_prompt.txt` | System instructions |
-| `prompts/rag_prompt.txt` | Main RAG prompt |
-
----
-
 ## API Endpoints
 
 | Method | Endpoint | Purpose |
@@ -134,15 +117,6 @@ src/storage/memory/state_manager.py
 
 ---
 
-## Vector Stores
-
-| Store | Type |
-|---|---|
-| FAISS | Local vector database |
-| Pinecone | Managed cloud vector database |
-
----
-
 ## Running Locally
 
 ```bash
@@ -154,19 +128,6 @@ Development reload is enabled when:
 ```text
 environment != production
 ```
-
----
-
-## Current Limitations
-
-| Area | Issue |
-|---|---|
-| Pinecone | Needs ingest/query validation |
-| Telegram | Limited runtime testing |
-| Citations | PDF metadata can be noisy |
-| Graph retrieval | Not wired into runtime |
-| Semantic memory | Exists but inactive |
-| Structured memory | Exists but inactive |
 
 ---
 
