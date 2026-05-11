@@ -1,55 +1,211 @@
 # CogitX-RAG
 
-CogitX-RAG is a FastAPI RAG system with document upload, Slack/Telegram bots, session memory, and pluggable embeddings/vector stores.
+FastAPI-based RAG system with document ingestion, conversational memory, Slack/Telegram integrations, configurable embeddings, and pluggable vector stores.
 
-## Working
+---
 
-| Area | Status |
+## System Overview
+
+| Component | Details |
 |---|---|
-| Upload, ingest, query, citations | Working |
-| Slack bot with thread session memory | Working |
-| Telegram bot, Pinecone path, persistent retrieval state | Present and partially wired |
+| Backend | FastAPI |
+| Retrieval | Chunk-based semantic retrieval |
+| Embeddings | Local, OpenAI, Gemini |
+| Vector Stores | FAISS, Pinecone |
+| Memory | Recent window + overflow summarization |
+| Bots | Slack, Telegram |
+| OCR Support | Tesseract + LibreOffice |
+| Prompt System | File-backed prompts |
+| Runtime | Uvicorn |
 
-## Current Behavior
+---
 
-- Documents are uploaded, extracted, chunked, embedded, and indexed.
-- Query responses include `answer`, `citations`, and `confidence`.
-- Local embedding modes support `local_single` and `local_dual`.
-- `local_dual` concatenates `local_embedding_model_1` and `local_embedding_model_2`.
-- Conversational memory uses `ConversationMemoryManager` with a recent window plus overflow summary.
-- Prompt templates are file-backed and loaded with `src/utils/prompt_loader.py`.
+## Features
+
+| Feature | Status | Notes |
+|---|---|---|
+| Document upload | Working | API upload + ingestion pipeline |
+| Chunking & embeddings | Working | Configurable embedding providers |
+| Retrieval & generation | Working | Retrieval + LLM response flow |
+| Citations | Working | Includes source metadata |
+| Confidence scoring | Working | Returned in query response |
+| Slack bot | Working | Thread-based session memory |
+| Telegram bot | Partial | Present but lightly tested |
+| Session memory | Working | Window + summarization |
+| Pinecone support | Partial | Requires validation |
+| Graph retrieval | Pending | Modules exist, not integrated |
+| Semantic memory | Pending | Runtime wiring incomplete |
+| Structured memory | Pending | Runtime wiring incomplete |
+
+---
+
+## Embedding Modes
+
+| Mode | Description |
+|---|---|
+| `local_single` | Uses one local embedding model |
+| `local_dual` | Concatenates two local models |
+| `openai` | OpenAI embeddings |
+| `gemini` | Gemini embeddings |
+
+### Default Local Models
+
+| Model | Dimension |
+|---|---|
+| `BAAI/bge-small-en-v1.5` | 384 |
+| `all-MiniLM-L6-v2` | 384 |
+
+Combined vector size in `local_dual` mode: **768**
+
+---
+
+## Memory System
+
+| Behavior | Description |
+|---|---|
+| Recent window | Keeps latest conversation turns |
+| Overflow storage | Moves older turns out of active window |
+| Summarization | Uses LLM to summarize overflow |
+| Prompt assembly | Injects summary + recent history |
+
+Active runtime path:
+
+```text
+src/storage/memory/state_manager.py
+```
+
+---
 
 ## Configuration
 
-- Non-secret config lives in [`settings.yaml`](settings.yaml).
-- Secrets live in [`.env`](.env).
-- [`src/config/settings.py`](src/config/settings.py) loads YAML plus secrets.
+| File | Purpose |
+|---|---|
+| `settings.yaml` | Main application config |
+| `.env` | Secrets and API keys |
+| `src/config/settings.py` | Config loader |
+
+### Important Config Keys
+
+| Key | Purpose |
+|---|---|
+| `llm.default_llm_provider` | Active LLM backend |
+| `embeddings.embedding_provider` | Embedding provider |
+| `vector_store.vector_store_type` | FAISS / Pinecone |
+| `memory.conversation_window_size` | Recent history size |
+| `memory.overflow_summary_threshold` | Summarization trigger |
+| `slack.slack_enabled` | Slack startup toggle |
+| `telegram.telegram_enabled` | Telegram startup toggle |
+
+---
 
 ## Prompt Files
 
-- [`prompts/system_prompt.txt`](prompts/system_prompt.txt)
-- [`prompts/rag_prompt.txt`](prompts/rag_prompt.txt)
-
-## API
-
-- `POST /api/v1/upload`
-- `POST /api/v1/upload-query`
-- `POST /api/v1/ingest`
-- `POST /api/v1/query`
-- `POST /api/v1/search`
-
-## TODO
-
-| Item | Notes |
+| File | Purpose |
 |---|---|
-| Graph retrieval | Not integrated into the current runtime path |
-| Telegram bot | Present, not fully tested end-to-end |
-| Citations metadata | Page/line numbering can be noisy and truncated |
-| Pinecone | Needs full verification on ingest/query symmetry |
-| SemanticMemory / StructuredMemory | Modules exist, wiring and tests still pending |
-| Dockerfile | Needs runtime validation against current branch changes |
+| `prompts/system_prompt.txt` | System instructions |
+| `prompts/rag_prompt.txt` | Main RAG prompt |
+
+Prompt loader:
+
+```text
+src/utils/prompt_loader.py
+```
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/v1/upload` | Upload document |
+| POST | `/api/v1/upload-query` | Upload + query |
+| POST | `/api/v1/ingest` | Ingest documents |
+| POST | `/api/v1/query` | Query RAG pipeline |
+| POST | `/api/v1/search` | Semantic search |
+
+### Query Response
+
+```json
+{
+  "answer": "...",
+  "citations": [],
+  "confidence": 0.0
+}
+```
+
+---
+
+## Vector Stores
+
+| Store | Type |
+|---|---|
+| FAISS | Local vector database |
+| Pinecone | Managed cloud vector database |
+
+---
+
+## Running Locally
+
+```bash
+python3 main.py
+```
+
+Development reload is enabled when:
+
+```text
+environment != production
+```
+
+---
+
+## Docker Support
+
+| Included | Details |
+|---|---|
+| Multi-stage build | Smaller production image |
+| OCR dependencies | Tesseract + Poppler |
+| Document conversion | LibreOffice |
+| Model preload | sentence-transformers + spaCy |
+| Non-root runtime | Production-safe container |
+
+---
+
+## Current Limitations
+
+| Area | Issue |
+|---|---|
+| Pinecone | Needs ingest/query validation |
+| Telegram | Limited runtime testing |
+| Citations | PDF metadata can be noisy |
+| Graph retrieval | Not wired into runtime |
+| Semantic memory | Exists but inactive |
+| Structured memory | Exists but inactive |
+
+---
 
 ## Notes
 
-- `config.py` at the repo root has been removed because it is not used by `main.py`.
-- The active prompt assembly path now uses `prompts/rag_prompt.txt` only.
+| Item | Details |
+|---|---|
+| `config.py` | Legacy file, removed from active runtime |
+| Active prompts | `prompts/rag_prompt.txt` |
+| Runtime config | `settings.yaml` + `src/config/settings.py` |
+
+---
+
+## Project Structure
+
+```text
+src/
+├── api/
+├── bots/
+├── config/
+├── ingestion/
+├── query/
+├── storage/
+│   ├── embeddings/
+│   ├── memory/
+│   └── vectorstores/
+├── utils/
+└── prompts/
+```

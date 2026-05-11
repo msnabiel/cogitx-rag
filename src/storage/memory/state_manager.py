@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 import faiss
 
+from src.utils.prompt_loader import load_prompt
+
 
 class RAGStateManager:
     """Persist and restore RAG retrieval state."""
@@ -81,6 +83,7 @@ class ConversationMemoryManager:
         self.window_size = window_size
         self.overflow_threshold = overflow_threshold
         self.llm_client = llm_client
+        self.memory_summary_prompt = load_prompt("prompts/memory_summary_prompt.txt")
         self.conversations_dir = os.path.join(cache_dir, "conversations")
         os.makedirs(self.conversations_dir, exist_ok=True)
 
@@ -153,12 +156,9 @@ class ConversationMemoryManager:
             snippets.append(transcript[:1200])
             return " | ".join(snippets)
 
-        prompt = (
-            "Summarize the following conversation turns into a compact long-term memory. "
-            "Keep concrete entities, user goals, constraints, tools, and decisions. "
-            "Return plain text only.\n\n"
-            f"Existing summary:\n{existing_summary or 'None'}\n\n"
-            f"Turns to summarize:\n{transcript}"
+        prompt = self.memory_summary_prompt.format(
+            existing_summary=existing_summary or "None",
+            turns=transcript,
         )
         try:
             summary = await self.llm_client.generate(prompt=prompt, temperature=0.2, max_tokens=200)

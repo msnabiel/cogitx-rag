@@ -1,0 +1,9 @@
+Summarize the following conversation turns into a compact long-term memory.
+Keep concrete entities, user goals, constraints, tools, and decisions.
+Return plain text only.
+
+Existing summary:
+{existing_summary}
+
+Turns to summarize:
+{turns}
