@@ -32,8 +32,6 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 | Telegram bot | ⚠️ | Present but not tested |
 | Citations | ⚠️ | line numbering can be noisy sometimes |
 | Graph retrieval | 🚧 | Modules exist, runtime integration pending |
-| Semantic memory | 🚧 | Runtime wiring incomplete |
-| Structured memory | 🚧 | Runtime wiring incomplete |
 
 ## Setup and running locally
 
