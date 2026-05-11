@@ -1,6 +1,7 @@
 """Prompt templates for RAG system."""
 
 from typing import List, Optional
+from src.utils.prompt_loader import load_prompt
 from src.core.models import ContextWindow
 
 
@@ -9,40 +10,17 @@ class PromptTemplates:
 
     @staticmethod
     def build_rag_prompt(context_window: ContextWindow) -> str:
-        """
-        Build RAG prompt from context window.
-
-        Args:
-            context_window: Context window
-
-        Returns:
-            Formatted prompt
-        """
-        prompt_parts = []
-
-        # Add system prompt
-        prompt_parts.append(context_window.system_prompt)
-
-        # Add memory context if available
-        if context_window.memory_context:
-            prompt_parts.append(f"\n## User Context\n{context_window.memory_context}")
-
-        # Add graph context if available
-        if context_window.graph_context:
-            prompt_parts.append(f"\n## Knowledge Graph Context\n{context_window.graph_context}")
-
-        # Add retrieved contexts
-        if context_window.retrieved_contexts:
-            prompt_parts.append("\n## Retrieved Information")
-            for i, context in enumerate(context_window.retrieved_contexts, 1):
-                prompt_parts.append(f"\n### Source {i}\n{context}")
-
-        # Add query
-        prompt_parts.append(f"\n## User Question\n{context_window.query}")
-
-        prompt_parts.append("\n## Answer")
-
-        return "\n".join(prompt_parts)
+        template = load_prompt("prompts/rag_prompt.txt")
+        retrieved_contexts = "\n".join(
+            f"### Source {i}\n{context}" for i, context in enumerate(context_window.retrieved_contexts, 1)
+        )
+        return template.format(
+            system_prompt=context_window.system_prompt,
+            memory_context=context_window.memory_context or "",
+            graph_context=context_window.graph_context or "",
+            retrieved_contexts=retrieved_contexts or "",
+            query=context_window.query,
+        )
 
     @staticmethod
     def build_chat_messages(
