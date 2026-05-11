@@ -8,7 +8,7 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 
 ## Demo
 
-[![Watch Demo](/assets/demo-thumbnail.png)](https://drive.google.com/file/d/1EjqoRS3pI4mJeXKQSxurDXGZ_lO1P3Bl/view?usp=sharing)
+[![Watch Demo](/assets/thumbnail1.png)](https://drive.google.com/file/d/1EjqoRS3pI4mJeXKQSxurDXGZ_lO1P3Bl/view?usp=sharing)
 
 ## System Overview
 
