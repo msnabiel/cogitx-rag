@@ -76,6 +76,15 @@ class DocumentCache:
             hashes.add(content_hash)
             self._save_index_registry(hashes)
 
+    def clear_registry(self) -> None:
+        """Clear the ingestion registry."""
+        if os.path.exists(self.index_registry_file):
+            try:
+                os.remove(self.index_registry_file)
+                self.logger.info("Ingestion registry cleared.")
+            except Exception as e:
+                self.logger.error(f"Failed to clear ingestion registry: {e}")
+
     def clear_all(self) -> bool:
         """Clear all cache entries"""
         try:

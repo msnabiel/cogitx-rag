@@ -19,11 +19,11 @@ class RAGStateManager:
         self.faiss_file = os.path.join(state_dir, "faiss.index")
         self.bm25_file = os.path.join(state_dir, "bm25.pkl")
         self.chunks_file = os.path.join(state_dir, "chunks.pkl")
-        self.bge_embeddings_file = os.path.join(state_dir, "bge_embeddings.pkl")
-        self.all_mini_embeddings_file = os.path.join(state_dir, "all_mini_embeddings.pkl")
+        self.local_embeddings_1_file = os.path.join(state_dir, "local_embeddings_1.pkl")
+        self.local_embeddings_2_file = os.path.join(state_dir, "local_embeddings_2.pkl")
         self.combined_embeddings_file = os.path.join(state_dir, "combined_embeddings.pkl")
 
-    def save(self, *, faiss_index, bm25, chunks, bge_embeddings, all_mini_embeddings, combined_embeddings) -> None:
+    def save(self, *, faiss_index, bm25, chunks, local_embeddings_1, local_embeddings_2, combined_embeddings) -> None:
         """Persist retrieval state to disk."""
         if faiss_index is None or bm25 is None or not chunks:
             return
@@ -33,10 +33,10 @@ class RAGStateManager:
             pickle.dump(bm25, f)
         with open(self.chunks_file, "wb") as f:
             pickle.dump(chunks, f)
-        with open(self.bge_embeddings_file, "wb") as f:
-            pickle.dump(bge_embeddings, f)
-        with open(self.all_mini_embeddings_file, "wb") as f:
-            pickle.dump(all_mini_embeddings, f)
+        with open(self.local_embeddings_1_file, "wb") as f:
+            pickle.dump(local_embeddings_1, f)
+        with open(self.local_embeddings_2_file, "wb") as f:
+            pickle.dump(local_embeddings_2, f)
         with open(self.combined_embeddings_file, "wb") as f:
             pickle.dump(combined_embeddings, f)
 
@@ -46,8 +46,8 @@ class RAGStateManager:
             self.faiss_file,
             self.bm25_file,
             self.chunks_file,
-            self.bge_embeddings_file,
-            self.all_mini_embeddings_file,
+            self.local_embeddings_1_file,
+            self.local_embeddings_2_file,
             self.combined_embeddings_file,
         ]
         if not all(os.path.exists(path) for path in required):
@@ -57,10 +57,10 @@ class RAGStateManager:
             bm25 = pickle.load(f)
         with open(self.chunks_file, "rb") as f:
             chunks = pickle.load(f)
-        with open(self.bge_embeddings_file, "rb") as f:
-            bge_embeddings = pickle.load(f)
-        with open(self.all_mini_embeddings_file, "rb") as f:
-            all_mini_embeddings = pickle.load(f)
+        with open(self.local_embeddings_1_file, "rb") as f:
+            local_embeddings_1 = pickle.load(f)
+        with open(self.local_embeddings_2_file, "rb") as f:
+            local_embeddings_2 = pickle.load(f)
         with open(self.combined_embeddings_file, "rb") as f:
             combined_embeddings = pickle.load(f)
 
@@ -68,8 +68,8 @@ class RAGStateManager:
             "faiss_index": faiss.read_index(self.faiss_file),
             "bm25": bm25,
             "chunks": chunks,
-            "bge_embeddings": bge_embeddings,
-            "all_mini_embeddings": all_mini_embeddings,
+            "local_embeddings_1": local_embeddings_1,
+            "local_embeddings_2": local_embeddings_2,
             "combined_embeddings": combined_embeddings,
         }
 

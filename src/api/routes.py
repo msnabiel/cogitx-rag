@@ -17,7 +17,8 @@ def create_router(
     document_processor,
     get_search_methods_fn,
     get_chunks_fn,
-    get_query_processor_fn
+    get_query_processor_fn,
+    clear_rag_state_fn,
 ):
     """Create unified API router"""
     router = APIRouter()
@@ -147,6 +148,17 @@ def create_router(
         return {
             "success": success,
             "message": "All cache entries cleared" if success else "Failed to clear cache"
+        }
+
+    @router.post("/cache/clear-all")
+    async def clear_all_cache_and_state():
+        cache_cleared = document_cache.clear_all()
+        state_result = clear_rag_state_fn()
+        return {
+            "success": cache_cleared and state_result.get("state_cleared", False),
+            "cache_cleared": cache_cleared,
+            "state_cleared": state_result.get("state_cleared", False),
+            "message": "Cache and RAG state cleared" if cache_cleared and state_result.get("state_cleared", False) else "Partial clear completed",
         }
 
     @router.post("/cache/clear-expired")

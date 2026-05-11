@@ -30,12 +30,13 @@ class DocumentProcessor:
         self.document_cache = document_cache
         self.text_extractor = TextExtractor()
 
-    async def ingest_documents_async(self, doc_inputs: List[str]) -> List:
+    async def ingest_documents_async(self, doc_inputs: List[str], force: bool = False) -> List:
         """
         Ingest documents using the text extraction service
 
         Args:
             doc_inputs: List of document paths or URLs
+            force: Whether to force re-ingestion even if already indexed
 
         Returns:
             List of IngestionResult objects
@@ -48,7 +49,7 @@ class DocumentProcessor:
         if local_files:
             logger.info(f"Processing {len(local_files)} local files using parallel method...")
             try:
-                local_chunks = self.process_documents_parallel(local_files)
+                local_chunks = self.process_documents_parallel(local_files, force=force)
                 all_chunks.extend(local_chunks)
                 for file in local_files:
                     results.append({"source": file, "success": True})
@@ -59,29 +60,30 @@ class DocumentProcessor:
 
         # Check if anything worked
         if not all_chunks:
-            logger.warning("No chunks extracted from any document.")
+            logger.warning("No new chunks extracted from any document.")
         else:
-            self.build_indices(all_chunks)
+            await self.build_indices(all_chunks)
             logger.info(f"Successfully ingested {len(all_chunks)} chunks from {len(doc_inputs)} documents")
 
         return results
 
-    def ingest_documents(self, file_paths: List[str]):
+    def ingest_documents(self, file_paths: List[str], force: bool = False):
         """Synchronous wrapper for document ingestion"""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self.ingest_documents_async(file_paths))
+            loop.run_until_complete(self.ingest_documents_async(file_paths, force=force))
         finally:
             loop.close()
 
-    def process_documents_parallel(self, inputs: List[str], max_workers: int = 10):
+    def process_documents_parallel(self, inputs: List[str], max_workers: int = 10, force: bool = False):
         """
         Process multiple documents (local files only) in parallel using direct extraction
 
         Args:
             inputs: List of local file paths
             max_workers: Maximum number of parallel workers
+            force: Whether to force re-ingestion even if already indexed
 
         Returns:
             List of DocumentChunk objects
@@ -134,7 +136,7 @@ class DocumentProcessor:
                     logger.warning(f"No content extracted from {input_source}")
                     return []
 
-                if self.document_cache.is_ingested(content_hash):
+                if not force and self.document_cache.is_ingested(content_hash):
                     logger.info(f"⏭️ Skipping already indexed document hash {content_hash}")
                     return []
 
