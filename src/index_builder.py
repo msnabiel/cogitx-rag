@@ -15,7 +15,7 @@ from src.search import SearchMethods
 logger = logging.getLogger(__name__)
 
 
-def build_indices(
+async def build_indices(
     chunks,
     embedding_provider,
     embedding_workers,
@@ -38,7 +38,7 @@ def build_indices(
     logger.info(f"Building indices for {len(chunks)} chunks with parallel embedding generation...")
     start_time = time.time()
 
-    combined_embeddings = asyncio.run(embedding_provider.embed_batch(texts))
+    combined_embeddings = await embedding_provider.embed_batch(texts)
     combined_embeddings = np.array(combined_embeddings, dtype=np.float32)
 
     # Store embeddings in chunks
@@ -67,7 +67,7 @@ def build_indices(
             chunk_meta["content"] = chunk.text
             chunk_meta["chunk_id"] = chunk.chunk_id
             metadata.append(chunk_meta)
-        asyncio.run(vector_store.upsert(ids=ids, embeddings=combined_embeddings.tolist(), metadata=metadata))
+        await vector_store.upsert(ids=ids, embeddings=combined_embeddings.tolist(), metadata=metadata)
 
     search_methods = SearchMethods(
         faiss_index=faiss_index,
@@ -80,8 +80,8 @@ def build_indices(
     # Update global state via callback
     update_globals_fn(
         chunks=chunks,
-        local_embedding_1_vectors=combined_embeddings,
-        local_embedding_2_vectors=combined_embeddings,
+        local_embeddings_1=combined_embeddings,
+        local_embeddings_2=combined_embeddings,
         indexed_vectors=combined_embeddings,
         faiss_index=faiss_index,
         bm25=bm25,

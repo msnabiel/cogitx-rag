@@ -3,6 +3,9 @@
 FastAPI-based RAG system with document ingestion, conversational memory, Slack/Telegram integrations, configurable embeddings, and pluggable vector stores.
 
 ---
+## Architecture
+
+![CogitX-RAG Architecture](images/architecture.png)
 
 ## System Overview
 
@@ -15,7 +18,6 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 | Memory | Recent window + overflow summarization |
 | Bots | Slack, Telegram |
 | OCR Support | Tesseract + LibreOffice |
-| Prompt System | File-backed prompts |
 | Runtime | Uvicorn |
 
 ---
@@ -27,7 +29,6 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 | Document upload | Working | API upload + ingestion pipeline |
 | Chunking & embeddings | Working | Configurable embedding providers |
 | Retrieval & generation | Working | Retrieval + LLM response flow |
-| Citations | Working | Includes source metadata |
 | Confidence scoring | Working | Returned in query response |
 | Slack bot | Working | Thread-based session memory |
 | Telegram bot | Partial | Present but lightly tested |
@@ -105,12 +106,6 @@ src/storage/memory/state_manager.py
 | `prompts/system_prompt.txt` | System instructions |
 | `prompts/rag_prompt.txt` | Main RAG prompt |
 
-Prompt loader:
-
-```text
-src/utils/prompt_loader.py
-```
-
 ---
 
 ## API Endpoints
@@ -128,7 +123,6 @@ src/utils/prompt_loader.py
 ```json
 {
   "answer": "...",
-  "citations": [],
   "confidence": 0.0
 }
 ```
@@ -158,18 +152,6 @@ environment != production
 
 ---
 
-## Docker Support
-
-| Included | Details |
-|---|---|
-| Multi-stage build | Smaller production image |
-| OCR dependencies | Tesseract + Poppler |
-| Document conversion | LibreOffice |
-| Model preload | sentence-transformers + spaCy |
-| Non-root runtime | Production-safe container |
-
----
-
 ## Current Limitations
 
 | Area | Issue |
@@ -180,16 +162,6 @@ environment != production
 | Graph retrieval | Not wired into runtime |
 | Semantic memory | Exists but inactive |
 | Structured memory | Exists but inactive |
-
----
-
-## Notes
-
-| Item | Details |
-|---|---|
-| `config.py` | Legacy file, removed from active runtime |
-| Active prompts | `prompts/rag_prompt.txt` |
-| Runtime config | `settings.yaml` + `src/config/settings.py` |
 
 ---
 

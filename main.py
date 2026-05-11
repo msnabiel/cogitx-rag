@@ -76,12 +76,15 @@ def build_embedding_provider():
 
 embedding_provider = build_embedding_provider()
 
+# Extract model for chunking if available
+embedding_model = getattr(embedding_provider, "bge_model", getattr(embedding_provider, "model", None))
+
 # Global state - RAG indices and chunks
 faiss_index = None
 bm25 = None
 chunks = []
-local_embedding_1_vectors = None
-local_embedding_2_vectors = None
+local_embeddings_1 = None
+local_embeddings_2 = None
 indexed_vectors = None
 search_methods = None
 query_processor = None
@@ -115,21 +118,64 @@ if settings.vector_store.vector_store_type == "pinecone":
 
 def update_global_state(**kwargs):
     """Update global RAG state after indexing"""
-    global chunks, local_embedding_1_vectors, local_embedding_2_vectors, indexed_vectors
+    global chunks, local_embeddings_1, local_embeddings_2, indexed_vectors
     global faiss_index, bm25, search_methods
     chunks = kwargs['chunks']
-    local_embedding_1_vectors = kwargs['local_embedding_1_vectors']
-    local_embedding_2_vectors = kwargs['local_embedding_2_vectors']
+    local_embeddings_1 = kwargs['local_embeddings_1']
+    local_embeddings_2 = kwargs['local_embeddings_2']
     indexed_vectors = kwargs['indexed_vectors']
     faiss_index = kwargs['faiss_index']
     bm25 = kwargs['bm25']
     search_methods = kwargs['search_methods']
 
-def build_indices(input_chunks):
-    """Build FAISS + BM25 indices"""
-    search_state = build_indices_fn(
-        chunks=input_chunks,
+def clear_rag_state():
+    """Clear persisted and in-memory RAG retrieval state."""
+    global chunks, local_embeddings_1, local_embeddings_2, indexed_vectors
+    global faiss_index, bm25, search_methods, query_processor
+
+    chunks = []
+    local_embeddings_1 = None
+    local_embeddings_2 = None
+    indexed_vectors = None
+    faiss_index = None
+    bm25 = None
+    search_methods = None
+    query_processor = None
+
+    # Clear document cache registry to allow re-indexing
+    document_cache.clear_all()
+
+    for path in [
+        rag_state_manager.faiss_file,
+        rag_state_manager.bm25_file,
+        rag_state_manager.chunks_file,
+        rag_state_manager.local_embeddings_1_file,
+        rag_state_manager.local_embeddings_2_file,
+        rag_state_manager.combined_embeddings_file,
+    ]:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError as e:
+            logger.warning(f"Failed to remove state file {path}: {e}")
+
+    return {
+        "state_cleared": True,
+        "message": "RAG state cleared",
+    }
+
+async def build_indices(input_chunks):
+    """Build FAISS + BM25 indices, merging with existing chunks if any."""
+    global chunks
+    
+    # Merge new chunks with existing ones
+    all_chunks = chunks + input_chunks
+    
+    workers = settings.processing.embedding_workers_gpu if DEVICE == "cuda" else settings.processing.embedding_workers_cpu
+    search_state = await build_indices_fn(
+        chunks=all_chunks,
         embedding_provider=embedding_provider,
+        embedding_workers=workers,
         update_globals_fn=update_global_state,
         vector_store=pinecone_store,
     )
@@ -138,8 +184,8 @@ def build_indices(input_chunks):
             faiss_index=faiss_index,
             bm25=bm25,
             chunks=chunks,
-            bge_embeddings=local_embedding_1_vectors,
-            all_mini_embeddings=local_embedding_2_vectors,
+            local_embeddings_1=local_embeddings_1,
+            local_embeddings_2=local_embeddings_2,
             combined_embeddings=indexed_vectors,
         )
     return search_state
@@ -157,9 +203,36 @@ def get_query_processor():
         )
     return query_processor
 
+async def _get_or_reload_query_processor():
+    """Ensure query processor is ready, reloading from state if necessary."""
+    processor = get_query_processor()
+    if processor is None:
+        global search_methods, chunks, local_embeddings_1, local_embeddings_2, indexed_vectors, faiss_index, bm25
+        if search_methods is None:
+            loaded = rag_state_manager.load()
+            if loaded:
+                faiss_index = loaded["faiss_index"]
+                bm25 = loaded["bm25"]
+                chunks = loaded["chunks"]
+                local_embeddings_1 = loaded["local_embeddings_1"]
+                local_embeddings_2 = loaded["local_embeddings_2"]
+                indexed_vectors = loaded["combined_embeddings"]
+                from src.search import SearchMethods
+                search_methods = SearchMethods(
+                    faiss_index=faiss_index,
+                    bm25=bm25,
+                    chunks=chunks,
+                    embedding_provider=embedding_provider,
+                    vector_store=pinecone_store,
+                )
+                processor = get_query_processor()
+    return processor
+
 async def query_rag_for_slack(query: Query):
     """Run the current query workflow and adapt it for Slack."""
-    processor = get_query_processor()
+    processor = await _get_or_reload_query_processor()
+    if processor is None:
+        raise RuntimeError("No document is available for retrieval yet. Upload a readable PDF in this thread first.")
     result = await processor.process(query.text, session_id=query.session_id)
     return SimpleNamespace(
         answer=result.answer,
@@ -172,8 +245,14 @@ async def query_rag_for_slack(query: Query):
 async def ingest_and_query_for_slack(file_path: str, query_text: str, session_id: str):
     """Ingest a local file and answer a query against the refreshed index."""
     file_url = f"file:/{os.path.abspath(file_path)}"
-    ingestion_results = await document_processor.ingest_documents_async([file_url])
-    processor = get_query_processor()
+    # Force re-ingestion if we have no index currently
+    force_ingest = search_methods is None
+    ingestion_results = await document_processor.ingest_documents_async([file_url], force=force_ingest)
+    
+    processor = await _get_or_reload_query_processor()
+    if processor is None:
+        raise RuntimeError("No documents were indexed from the uploaded file.")
+    
     result = await processor.process(query_text, session_id=session_id)
     return {
         "url": file_url,
@@ -186,11 +265,14 @@ async def ingest_and_query_for_slack(file_path: str, query_text: str, session_id
 async def ingest_files_and_query_for_slack(file_paths: list[str], query_text: str, session_id: str):
     """Ingest multiple local files and answer a query against the refreshed index."""
     file_urls = [f"file:/{os.path.abspath(path)}" for path in file_paths]
-    ingestion_results = []
-    for file_url in file_urls:
-        ingestion_results.extend(await document_processor.ingest_documents_async([file_url]))
+    # Force re-ingestion if we have no index currently
+    force_ingest = search_methods is None
+    ingestion_results = await document_processor.ingest_documents_async(file_urls, force=force_ingest)
 
-    processor = get_query_processor()
+    processor = await _get_or_reload_query_processor()
+    if processor is None:
+        raise RuntimeError("No documents were indexed from the uploaded files.")
+
     result = await processor.process(query_text, session_id=session_id)
     return {
         "urls": file_urls,
@@ -202,7 +284,7 @@ async def ingest_files_and_query_for_slack(file_paths: list[str], query_text: st
 
 # Initialize document processor
 document_processor = DocumentProcessor(
-    lambda text: chunk_text_strategy(text, model=bge_model),
+    lambda text: chunk_text_strategy(text, model=embedding_model),
     build_indices,
     document_cache
 )
@@ -213,8 +295,8 @@ if loaded_state:
     faiss_index = loaded_state["faiss_index"]
     bm25 = loaded_state["bm25"]
     chunks = loaded_state["chunks"]
-    local_embedding_1_vectors = loaded_state["bge_embeddings"]
-    local_embedding_2_vectors = loaded_state["all_mini_embeddings"]
+    local_embeddings_1 = loaded_state["local_embeddings_1"]
+    local_embeddings_2 = loaded_state["local_embeddings_2"]
     indexed_vectors = loaded_state["combined_embeddings"]
     search_methods = SearchMethods(
         faiss_index=faiss_index,
@@ -223,11 +305,26 @@ if loaded_state:
         embedding_provider=embedding_provider,
         vector_store=pinecone_store,
     )
+    query_processor = get_query_processor()
+else:
+    logger.info("No persisted RAG state found. Clearing document ingestion registry to ensure fresh starts.")
+    document_cache.clear_registry()
 
 # FastAPI app
 app = FastAPI(title="CogitX-RAG API", description="Production-grade RAG system", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-app.include_router(create_router(UPLOAD_DIR, document_cache, document_processor, lambda: search_methods, lambda: chunks, get_query_processor), prefix="/api/v1")
+app.include_router(
+    create_router(
+        UPLOAD_DIR,
+        document_cache,
+        document_processor,
+        lambda: search_methods,
+        lambda: chunks,
+        get_query_processor,
+        clear_rag_state,
+    ),
+    prefix="/api/v1",
+)
 app.middleware("http")(log_request_middleware)
 
 

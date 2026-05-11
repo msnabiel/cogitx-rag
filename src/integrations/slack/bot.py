@@ -89,6 +89,11 @@ def create_slack_app(
                         citation_text = _format_citations(response.get("citations", []))
                         await say(text=f"{response['answer']}{citation_text}", thread_ts=thread_ts)
                         return
+                    await say(
+                        text="❌ I couldn't read any content from the uploaded file(s). Please try a different PDF.",
+                        thread_ts=thread_ts,
+                    )
+                    return
                 finally:
                     for tmp_path in tmp_paths:
                         try:
@@ -139,7 +144,10 @@ def create_slack_app(
 
         except Exception as e:
             logger.error("Slack query error: {}", str(e))
-            await say(text=f"❌ Error: {str(e)}", thread_ts=thread_ts)
+            friendly_error = str(e)
+            if "No documents indexed" in friendly_error or "No documents were indexed" in friendly_error:
+                friendly_error = "No document is available for retrieval yet. Upload a readable PDF in this thread first."
+            await say(text=f"❌ Error: {friendly_error}", thread_ts=thread_ts)
 
     @app.command("/cogitx")
     async def handle_command(ack, command, say):

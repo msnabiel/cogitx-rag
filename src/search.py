@@ -131,9 +131,8 @@ class SearchMethods:
             faiss_index: FAISS index for semantic search
             bm25: BM25 index for lexical search
             chunks: List of document chunks
-            bge_model: BGE embedding model
-            all_mini_model: All-MiniLM embedding model
-            all_mini_embeddings: Pre-computed All-MiniLM embeddings
+            embedding_provider: Embedding provider instance
+            vector_store: Optional vector store (e.g. Pinecone)
         """
         self.faiss_index = faiss_index
         self.bm25 = bm25
@@ -230,17 +229,17 @@ class SearchMethods:
             raise HTTPException(status_code=500, detail="Indices not built")
 
         # Get results from different models
-        bge_results = await self.semantic_search(query, top_k * 3) # Semantic weight
+        semantic_results = await self.semantic_search(query, top_k * 3) # Semantic weight
         bm25_results = self.lexical_search(query, top_k * 3)
 
         # Combine results using reciprocal rank fusion
         combined_scores = {}
 
-        for i, result in enumerate(bge_results):
+        for i, result in enumerate(semantic_results):
             chunk_id = result.chunk.chunk_id
             if chunk_id not in combined_scores:
                 combined_scores[chunk_id] = {"chunk": result.chunk, "scores": []}
-            combined_scores[chunk_id]["scores"].append(1.0 / (i + 20))  # BGE 1024 + Intfloat 1024 weight
+            combined_scores[chunk_id]["scores"].append(1.0 / (i + 20))  # Semantic weight
 
         for i, result in enumerate(bm25_results):
             chunk_id = result.chunk.chunk_id
@@ -267,32 +266,6 @@ class SearchMethods:
         results.sort(key=lambda x: x.combined_score, reverse=True)
         logger.info(f"Ensemble search took {time.time() - start_time:.2f} seconds")
         return results[:top_k]
-
-    def _all_mini_search(self, query: str, top_k: int = 10) -> List[SearchResult]:
-        """Search using All-MiniLM model with pre-computed embeddings"""
-        if not self.chunks or self.all_mini_embeddings is None:
-            return []
-
-        # Encode query with All-MiniLM
-        query_embedding = self.all_mini_model.encode([query], normalize_embeddings=True)
-
-        # Calculate similarities with pre-computed All-MiniLM embeddings
-        similarities = np.dot(self.all_mini_embeddings, query_embedding[0])
-
-        # Get top-k results
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-
-        results = []
-        for idx in top_indices:
-            chunk = self.chunks[idx]
-            result = SearchResult(
-                chunk=chunk,
-                semantic_score=float(similarities[idx]),
-                search_strategy="all_mini"
-            )
-            results.append(result)
-
-        return results
 
 
 __all__ = ['SearchMethods', 'SearchResult', 'DocumentChunk', 'merge_chunks_search']
