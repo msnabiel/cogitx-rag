@@ -35,6 +35,23 @@ FastAPI-based RAG system with document ingestion, conversational memory, Slack/T
 | Semantic memory | 🚧 | Runtime wiring incomplete |
 | Structured memory | 🚧 | Runtime wiring incomplete |
 
+## Setup and running locally
+
+```bash
+git clone https://github.com/msnabiel/cogitx-rag.git
+cd cogitx-rag
+
+python3 -m venv venv
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+python3 main.py
+```
+Development reload is enabled when:
+environment != production
+
+Configure environment variables in `.env` before starting the server.
 
 ## Embedding Modes
 
